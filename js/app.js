@@ -1,3 +1,4 @@
+import { remixRecipe } from "./remix.js?v=1";
 import { rankPaintings } from "./rarity.js?v=1";
 import {
   LAYERS,
@@ -17,7 +18,7 @@ import {
   pickPlan,
   metadata,
   validateCard,
-} from "./core.js?v=drifella-14";
+} from "./core.js?v=drifella-15";
 import { renderBlob, clearImageCache } from "./renderer.js?v=drifella-4";
 import * as storage from "./storage.js?v=drifella-4";
 import { zip } from "./zip.js?v=drifella-3";
@@ -324,8 +325,9 @@ function renderGrid() {
       );
       save.setAttribute("aria-pressed", String(saved));
       actions.append(
-        save,
         button("Edit", () => openCard(card), "edit-painting"),
+        save,
+        button("Remix", () => remixBatch(card)),
       );
     } else {
       const remove = button("", () => deleteCard(card), "remove-painting");
@@ -374,6 +376,29 @@ async function generate() {
   $("generation-loading").hidden = false;
   try { await generateBatch(); }
   finally { $("generation-loading").hidden = true; }
+}
+async function remixBatch(source) {
+  hideHoverPreview();
+  $("generation-loading").hidden = false;
+  try {
+    const excluded = new Set(settings.disabledAssets);
+    const assets = assetsForPack(allAssets(), source.recipe.pack || settings.pack)
+      .filter(a => !excluded.has(a.id) && settings.enabled[a.layer] !== false);
+    const next = [];
+    for (let i=0; i<slots.length; i++) {
+      if (slots[i].id === source.id) { next.push(slots[i]); continue; }
+      $("generation-progress").textContent = `Remixing ${i+1} of ${slots.length}…`;
+      const id = crypto.randomUUID();
+      const recipe = remixRecipe(source.recipe, assets, id);
+      const thumbnail = await renderBlob(recipe, allAssets(), {width:480});
+      next.push({id, name:`Painting ${String(batch+1).padStart(3,"0")}.${String(i+1).padStart(2,"0")}`, created:new Date().toISOString(),recipe,thumbnail});
+    }
+    if (dbAvailable) await storage.putState({...workspace(),batch:batch+1});
+    checkpoint();
+    slots = next;
+    batch++;
+    renderGrid();
+  } finally { $("generation-loading").hidden = true; }
 }
 async function generateBatch() {
   if (!catalog().length)
@@ -1425,20 +1450,33 @@ on("download-card", async () => {
 });
 on("refresh-rarity", () => { refreshRarity(true); renderGrid(); });
 on("backup-button", backup);
-on("export-all", async () => {
+const exportFormats = {png:true, print:true, json:true};
+for (const format of Object.keys(exportFormats)) {
+  on(`download-${format}-toggle`, () => {
+    exportFormats[format] = !exportFormats[format];
+    $(`download-${format}-toggle`).setAttribute("aria-pressed", exportFormats[format]);
+    $("download-collection").disabled = !Object.values(exportFormats).some(Boolean);
+  });
+}
+on("export-all", () => {
   if (!cards.length) throw Error("Save some paintings first.");
+  $("download-dialog").showModal();
+});
+on("download-collection", async () => {
+  if (!Object.values(exportFormats).some(Boolean)) return;
   const entries = [];
   for (const c of cards) {
-    const id = safeName(c.id),
-      folder = id;
-    entries.push(
-      { name: `${folder}/${id}.png`, blob: c.png },
-      { name: `${folder}/${id} print assets.png`, blob: c.overlay },
-      { name: `${folder}/${id}.json`, blob: jsonBlob(metadata(c)) },
-    );
+    const id = safeName(c.id), folder = id;
+    if (exportFormats.png) entries.push({name:`${folder}/${id}.png`,blob:c.png});
+    if (exportFormats.print) entries.push({name:`${folder}/${id} print assets.png`,blob:c.overlay});
+    if (exportFormats.json) {
+      const data = metadata(c);
+      data.image = `${id}.png`;
+      entries.push({name:`${folder}/${id}.json`,blob:jsonBlob(data)});
+    }
   }
   download(await zip(entries), "painting-collection.zip");
-  toast(`Exported ${cards.length} paintings with print layers and metadata.`);
+  $("download-dialog").close();
 });
 document.addEventListener("keydown", (e) => {
   if (

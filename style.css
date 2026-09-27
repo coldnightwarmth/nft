@@ -1666,3 +1666,10 @@ dialog { overscroll-behavior: contain; }
 #card-dialog .studio-buttons { margin-top: 20px; }
 
 #card-dialog #download-card { margin-top: 16px; }
+
+.picker-mode .tile-actions .edit-painting { color: var(--text); }
+
+.download-dialog { width: 360px; max-width: calc(100vw - 24px); }
+.download-options { display: flex; gap: 8px; }
+.download-options button { flex: 1; }
+.download-options button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }

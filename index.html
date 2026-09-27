@@ -9,7 +9,7 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect x='8' y='3' width='24' height='34' rx='4' fill='%23ffe66d'/%3E%3C/svg%3E"
     />
-    <link rel="stylesheet" href="./style.css?v=drifella-33" />
+    <link rel="stylesheet" href="./style.css?v=drifella-35" />
   </head>
   <body class="picker-mode">
     <header class="topbar">
@@ -283,6 +283,15 @@
         </div>
       </div>
     </dialog>
+    <dialog id="download-dialog" class="download-dialog">
+      <div class="dialog-heading"><h2>Download</h2><button class="icon" data-close="download-dialog" aria-label="Close download">×</button></div>
+      <div class="download-options">
+        <button id="download-png-toggle" aria-pressed="true">PNG</button>
+        <button id="download-print-toggle" aria-pressed="true">Print layer</button>
+        <button id="download-json-toggle" aria-pressed="true">JSON</button>
+      </div>
+      <div class="dialog-footer"><button id="download-collection" class="primary">Download</button></div>
+    </dialog>
     <dialog id="asset-preview-dialog" class="asset-preview-dialog">
       <div class="dialog-heading">
         <h2 id="asset-preview-title">Asset preview</h2>
@@ -309,6 +318,6 @@
       >This generator needs JavaScript enabled to composite images in your
       browser.</noscript
     >
-    <script type="module" src="./js/app.js?v=drifella-34"></script>
+    <script type="module" src="./js/app.js?v=drifella-36"></script>
   </body>
 </html>

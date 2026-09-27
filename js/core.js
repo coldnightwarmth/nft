@@ -341,16 +341,23 @@ export function pickPlan(catalog, settings, seed) {
   };
 }
 export function metadata(card) {
+  const counts = new Map(), totals = new Map();
+  const labels = card.recipe.ops.map(op => categoryLabel(mergedLayer(op.layer)));
+  for (const label of labels) totals.set(label, (totals.get(label) || 0) + 1);
+  const attributes = card.recipe.ops.map((op,index) => {
+    const label = labels[index], occurrence = (counts.get(label) || 0) + 1;
+    counts.set(label, occurrence);
+    return {trait_type: totals.get(label) > 1 ? `${label} ${occurrence}` : label, value:op.name};
+  });
   return {
     name: card.name,
     description: "An independently generated painting.",
     image: `${card.id}.png`,
-    attributes: [
-      ...card.recipe.ops.map((o) => ({ trait_type: o.layer, value: o.name })),
-    ],
+    attributes,
     properties: {
       generator: "NFT Painting Generator",
-      version: 1,
+      version: 2,
+      layer_order: "bottom-to-top",
       id: card.id,
       created: card.created,
       recipe: card.recipe,
