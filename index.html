@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <title>nft generator</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect x='8' y='3' width='24' height='34' rx='4' fill='%23ffe66d'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="./style.css?v=drifella-18" />
+  </head>
+  <body class="picker-mode">
+    <header class="topbar">
+      <nav aria-label="Workspace">
+        <button id="picker-tab" class="tab active" aria-pressed="true">
+          Generate</button
+        ><button id="collection-tab" class="tab" aria-pressed="false">
+          Curate <span id="saved-count">0</span>
+        </button>
+      </nav>
+      <div class="grow"></div>
+      <button id="assets-button">Assets <span id="asset-count">0</span></button
+      ><button id="settings-button">
+        Settings
+      </button>
+    </header>
+    <main>
+      <section class="workspace-heading">
+        <div class="heading-actions" id="collection-actions" hidden>
+          <button id="backup-button">Back up</button
+          ><button id="restore-button">Restore backup</button
+          ><button id="export-all" class="primary">Export collection ↓</button>
+        </div>
+      </section>
+      <section id="picker-toolbar" class="toolbar">
+        <span id="batch-status" class="sr-only" role="status"></span>
+        <div class="heading-actions" id="picker-actions">
+          <button id="undo-button" aria-label="Back" disabled>←</button>
+          <button id="regenerate" class="primary">
+            ↻ Generate batch <kbd>R</kbd>
+          </button>
+        </div>
+        <div class="grow"></div>
+        <label class="inline"
+          >Variants
+          <select id="batch-count">
+            <option>3</option>
+            <option selected>6</option>
+            <option>8</option>
+            <option>12</option>
+          </select></label
+        >
+      </section>
+      <section id="collection-toolbar" class="toolbar" hidden>
+        <input
+          id="search"
+          type="search"
+          placeholder="Search names or traits…"
+          aria-label="Search collection"
+        />
+        <div class="grow"></div>
+        <label class="inline"
+          >Sort
+          <select id="sort">
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            
+            <option value="traits">Trait count</option>
+            <option value="name">Name</option>
+          </select></label
+        ><button id="zoom-out" class="gallery-zoom" aria-label="Zoom out"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="m15 15 6 6"/><path d="M7 10h6"/></svg></button><button id="zoom-in" class="gallery-zoom" aria-label="Zoom in"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="m15 15 6 6"/><path d="M10 7v6M7 10h6"/></svg></button><span id="collection-total" class="quiet"></span>
+      </section>
+      <div id="notice" role="status" aria-live="polite" hidden></div>
+      <section id="grid" class="grid" aria-label="Generated cards"></section>
+      <section id="empty" class="empty" hidden>
+        <div class="empty-icon">▧</div>
+        <h2>Your collection starts here.</h2>
+        <p>
+          Save any generation to keep it here. There’s room for more than one
+          favorite.
+        </p>
+        <div id="start-options">
+          <div class="start-options-row">
+            <label id="start-set-label" class="start-set"
+              >Asset set<select
+                id="start-set"
+                aria-label="Starting Drifella set"
+              ></select></label
+            ><span class="start-or">or</span
+            ><label class="custom-choice"
+              >Custom<button
+                id="custom-folder-button"
+              >
+                Load folder
+              </button></label
+            >
+          </div>
+          <p id="custom-folder-name" class="quiet"></p>
+        </div>
+        <input
+          id="custom-folder-input"
+          type="file"
+          webkitdirectory
+          multiple
+          hidden
+        />
+        <button id="empty-generate" class="primary">Back to generator</button>
+      </section>
+    </main>
+    <div id="hover-preview" hidden aria-hidden="true">
+      <img id="hover-preview-image" alt="Full-size generation preview" />
+    </div>
+    <dialog id="assets-dialog" class="panel-dialog">
+      <div class="dialog-heading">
+        <div>
+          <h2>Asset library</h2>
+        </div>
+        <button
+          data-close="assets-dialog"
+          class="icon"
+          aria-label="Close assets"
+        >
+          ×
+        </button>
+      </div>
+      <div class="source-card">
+        <div>
+          <strong>Drifella asset set</strong>
+          <p>
+            All mode merges matching categories across sets; unique layers
+            remain separate.
+          </p>
+        </div>
+        <select id="library-select" aria-label="Drifella asset set"></select>
+      </div>
+      <div class="source-card">
+        <div><strong>Add new layers</strong><p>Add a folder as a category, or add images to a category.</p></div>
+        <button id="new-layers-button" class="primary">＋ Add new layers</button>
+      </div>
+      <input
+        id="folder-input"
+        type="file"
+        webkitdirectory
+        multiple
+        hidden
+      /><input
+        id="file-input"
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/avif,image/svg+xml"
+        multiple
+        hidden
+      />
+      <div class="asset-browser-heading">
+        <label
+          >Find an asset<input
+            id="asset-search"
+            type="search"
+            placeholder="Search names, folders, or sets…" /></label
+        >
+      </div>
+      <div id="asset-summary" class="asset-summary"></div>
+      <div id="local-sources"></div>
+    </dialog>
+    <dialog id="new-layers-dialog" class="panel-dialog">
+      <div class="dialog-heading"><h2>Add new layers</h2><button data-close="new-layers-dialog">Close</button></div>
+      <p>Each folder becomes a new trait category. Individual images can join an existing category or a new one.</p>
+      <div class="inline"><button id="folder-button">Load folder</button><button id="files-button">Select images</button></div>
+      <div id="category-fields" hidden>
+        <p id="pending-images"></p>
+        <label>Category <select id="file-layer"></select></label>
+        <label id="new-category-label">New category name <input id="new-category-name" maxlength="200" /></label>
+        <div class="dialog-footer"><button id="confirm-images" class="primary">Add images</button></div>
+      </div>
+    </dialog>
+    <dialog id="settings-dialog" class="panel-dialog">
+      <div class="dialog-heading">
+        <div>
+          <h2>Generation settings</h2>
+        </div>
+        <button
+          data-close="settings-dialog"
+          class="icon"
+          aria-label="Close settings"
+        >
+          ×
+        </button>
+      </div>
+      <div class="settings-grid">
+        <label
+          >Canvas width<input
+            id="canvas-width"
+            type="number"
+            min="100"
+            max="4096"
+            step="1" /></label
+        ><label
+          >Canvas height<input
+            id="canvas-height"
+            type="number"
+            min="100"
+            max="4096"
+            step="1" /></label
+        ><label
+          >Fallback background<input id="canvas-color" type="color"
+        /></label>
+      </div>
+      <div class="checks">
+        <label
+          ><input id="sprite-enabled" type="checkbox" /> Enable optional
+          sprites</label
+        >
+      </div>
+      <div id="sprite-controls" class="settings-grid" hidden>
+        <label
+          >Average sprite count<input
+            id="sprite-mean"
+            type="number"
+            min="0"
+            max="16"
+            step="0.1" /></label
+        ><label
+          >Maximum sprites<input
+            id="sprite-max"
+            type="number"
+            min="0"
+            max="32"
+            step="1" /></label
+        ><label
+          >Sprite burst chance (%)<input
+            id="burst-chance"
+            type="number"
+            min="0"
+            max="100"
+            step="1"
+        /></label>
+      </div>
+      <div class="checks">
+        <label
+          ><input id="random-order" type="checkbox" /> Randomize layer order
+          (background stays behind)</label
+        ><label
+          ><input id="density-jitter" type="checkbox" /> Vary density between
+          cards</label
+        >
+      </div>
+      <div class="section-title">
+        <h3>Layer probability</h3>
+        <span class="quiet">Chance of appearing · uncheck to disable</span>
+      </div>
+      <div id="layer-settings"></div>
+      <div class="section-title">
+        <h3>Presets</h3>
+        <button id="reset-settings">Reset defaults</button>
+      </div>
+      <div class="inline">
+        <input
+          id="preset-name"
+          placeholder="Name this mix…"
+          maxlength="60"
+          aria-label="Preset name"
+        /><button id="save-preset">Save preset</button>
+      </div>
+      <div id="preset-list"></div>
+      <div class="dialog-footer">
+        <span class="quiet">Changes apply to your next generation.</span
+        ><button data-close="settings-dialog" class="primary">Done</button>
+      </div>
+    </dialog>
+    <dialog id="card-dialog" class="card-dialog">
+      <div class="dialog-heading">
+        <div>
+          <div class="eyebrow" id="card-eyebrow">CARD STUDIO</div>
+          <h2 id="card-title">Card</h2>
+        </div>
+        <button
+          data-close="card-dialog"
+          class="icon"
+          aria-label="Close card studio"
+        >
+          ×
+        </button>
+      </div>
+      <div class="studio">
+        <div class="studio-art">
+          <img id="studio-image" alt="Card preview" />
+        </div>
+        <div class="studio-controls">
+          <label>Card name<input id="card-name" maxlength="100" /></label
+          >
+          <div class="section-title">
+            <h3>Layers</h3>
+            <span class="quiet">Bottom → top</span>
+          </div>
+          <div id="studio-layers"></div>
+          <div class="inline">
+            <select id="add-layer" aria-label="Layer to add"></select
+            ><button id="add-trait">＋ Add</button>
+          </div>
+          <p id="edit-note" class="muted small"></p>
+          <div class="studio-buttons">
+            <button id="apply-card" class="primary">Save to collection</button
+            ><button id="download-card">Download PNG</button
+            ><button id="export-card">PNG + print layers + JSON</button
+            ><button id="revert-card">Reset edits</button>
+          </div>
+        </div>
+      </div>
+    </dialog>
+    <dialog id="asset-preview-dialog" class="asset-preview-dialog">
+      <div class="dialog-heading">
+        <h2 id="asset-preview-title">Asset preview</h2>
+        <button
+          data-close="asset-preview-dialog"
+          class="icon"
+          aria-label="Close asset preview"
+        >
+          ×
+        </button>
+      </div>
+      <img id="asset-preview-image" alt="" />
+      <p id="asset-preview-caption" class="muted"></p>
+      <div id="asset-preview-actions" class="dialog-footer"></div>
+    </dialog>
+    <input
+      id="restore-input"
+      type="file"
+      accept="application/json,.json"
+      hidden
+    />
+    <div id="toast" role="status" aria-live="polite" hidden></div>
+    <noscript
+      >This generator needs JavaScript enabled to composite images in your
+      browser.</noscript
+    >
+    <script type="module" src="./js/app.js?v=drifella-17"></script>
+  </body>
+</html>
