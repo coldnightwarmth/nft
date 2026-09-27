@@ -418,7 +418,6 @@ async function undo() {
   settingsUI();
   assetSummary();
   renderGrid();
-  toast("Last action undone.");
 }
 const openAssetFolders = new Set(),
   folderPages = new Map();
