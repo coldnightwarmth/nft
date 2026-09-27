@@ -9,7 +9,7 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect x='8' y='3' width='24' height='34' rx='4' fill='%23ffe66d'/%3E%3C/svg%3E"
     />
-    <link rel="stylesheet" href="./style.css?v=drifella-18" />
+    <link rel="stylesheet" href="./style.css?v=drifella-19" />
   </head>
   <body class="picker-mode">
     <header class="topbar">
@@ -109,6 +109,10 @@
         <button id="empty-generate" class="primary">Back to generator</button>
       </section>
     </main>
+    <div id="generation-loading" hidden role="status" aria-live="polite">
+      <div class="generation-spinner" aria-hidden="true"></div>
+      <span id="generation-progress">Generating batch…</span>
+    </div>
     <div id="hover-preview" hidden aria-hidden="true">
       <img id="hover-preview-image" alt="Full-size generation preview" />
     </div>
@@ -334,6 +338,6 @@
       >This generator needs JavaScript enabled to composite images in your
       browser.</noscript
     >
-    <script type="module" src="./js/app.js?v=drifella-18"></script>
+    <script type="module" src="./js/app.js?v=drifella-19"></script>
   </body>
 </html>

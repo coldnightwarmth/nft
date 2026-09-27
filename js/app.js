@@ -334,6 +334,12 @@ function fitGrid() {
 new ResizeObserver(fitGrid).observe($("grid"));
 
 async function generate() {
+  hideHoverPreview();
+  $("generation-loading").hidden = false;
+  try { await generateBatch(); }
+  finally { $("generation-loading").hidden = true; }
+}
+async function generateBatch() {
   if (!catalog().length)
     throw Error("Load an asset folder or enable the hosted library first.");
   const next = Array(settings.count).fill(null);
@@ -341,6 +347,7 @@ async function generate() {
   for (let i = 0; i < next.length; i++) {
     if (next[i]) continue;
     $("batch-status").textContent = `Rendering ${i + 1} of ${next.length}…`;
+    $("generation-progress").textContent = `Generating ${i + 1} of ${next.length}…`;
     const id = crypto.randomUUID(),
       recipe = pickPlan(catalog(), settings, id);
     const thumbnail = await renderBlob(recipe, allAssets(), { width: 480 });
