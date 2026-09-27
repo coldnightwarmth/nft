@@ -2,6 +2,15 @@ import {
   LAYERS as SOURCE_LAYERS,
   PACKS as SOURCE_PACKS,
 } from "./library.js?v=drifella-3";
+const REPEATED = {
+  "2pencil":"pencil", "3pencil 2":"pencil",
+  "4paint":"paint", "5paint 2":"paint",
+  "6additive":"additive", "6additive - copy":"additive", "6additive - copy - copy":"additive",
+  "98strokes":"strokes", "99strokes 2":"strokes", "991strokes 3":"strokes",
+};
+export const categoryLayer = layer => REPEATED[layer] || layer;
+export const categoryLabel = layer => categoryLayer(layer).replace(/^custom:/, "").replace(/^\d+[ _-]*/, "");
+const repeatDefaults = {pencil:2, paint:2, additive:3, strokes:3};
 // Semantic aliases only: repeated paint/stroke/additive passes remain independent.
 const MERGED = {
   "11cloth": "cloth",
@@ -26,7 +35,7 @@ const MERGED = {
   "95noise": "noise",
   "2background+": "background+",
 };
-export const mergedLayer = (layer) => MERGED[layer] || layer;
+export const mergedLayer = (layer) => REPEATED[layer] || MERGED[layer] || layer;
 const ALL_ORDER = [
   "background",
   "background+",
@@ -58,11 +67,11 @@ const ALL_ORDER = [
   "noise",
 ];
 export const PACKS = [
-  ...SOURCE_PACKS,
+  ...SOURCE_PACKS.map(p => ({...p, layers:[...new Set(p.layers.map(categoryLayer))]})),
   { id: "custom", name: "Custom folder", layers: [] },
-  { id: "all", name: "All Drifella sets", layers: ALL_ORDER },
+  { id: "all", name: "All Drifella sets", layers: [...new Set(ALL_ORDER.map(categoryLayer))] },
 ];
-export const LAYERS = [...new Set([...SOURCE_LAYERS, ...ALL_ORDER])];
+export const LAYERS = [...new Set([...SOURCE_LAYERS, ...ALL_ORDER, ...Object.values(REPEATED)])];
 export function assetsForPack(assets, pack) {
   const seen = new Set();
   return assets
@@ -82,12 +91,12 @@ export function assetsForPack(assets, pack) {
             sourceLayer: a.sourceLayer || a.layer,
             layer: mergedLayer(a.layer),
           }
-        : a,
+        : {...a, sourceLayer: a.sourceLayer || a.layer, layer: categoryLayer(a.layer)},
     )
     .filter(a => {
       // Hosted filenames are SHA-256 hashes of the original image bytes.
       // Local filenames alone cannot establish identical image contents.
-      if (pack !== "all" || a.source === "local" || !/^drifella\/[a-f0-9]{64}\.webp$/.test(a.path || "")) return true;
+      if ((pack !== "all" && !repeatDefaults[a.layer]) || a.source === "local" || !/^drifella\/[a-f0-9]{64}\.webp$/.test(a.path || "")) return true;
       const key = `${a.layer}:${a.path}`;
       if (seen.has(key)) return false;
       seen.add(key);
@@ -119,6 +128,7 @@ export const DEFAULTS = {
   customLayers: [],
   additionalLayers: {},
   layerOrders: {},
+  repeats: repeatDefaults,
   spriteMean: 2.2,
   spriteMax: 16,
   burstChance: 0.12,
@@ -137,7 +147,7 @@ function baseLayers(settings) {
 export function activeLayers(settings) {
   const layers = baseLayers(settings);
   const saved = settings.layerOrders?.[settings.pack] || [];
-  return [...new Set([...saved.filter(l => layers.includes(l)), ...layers])];
+  return [...new Set([...saved.map(categoryLayer).filter(l => layers.includes(l)), ...layers])];
 }
 export function assetTraits(filename) {
   const stem = filename.replace(/\.(png|jpe?g|webp|gif|bmp|avif|svg)$/i, "");
@@ -212,11 +222,14 @@ export function normalizeSettings(s = {}) {
   out.randomOrder = s.randomOrder ?? false;
   out.jitter = s.jitter ?? false;
   out.color = /^#[0-9a-f]{6}$/i.test(s.color || "") ? s.color : DEFAULTS.color;
+  out.repeats = {};
   out.empty = { ...DEFAULTS.empty };
   out.enabled = { ...DEFAULTS.enabled };
   for (const l of [...LAYERS, ...out.customLayers, ...Object.values(out.additionalLayers).flat()]) {
-    out.empty[l] = number(s.empty?.[l], DEFAULTS.empty[l] ?? 0, 0, 1);
-    out.enabled[l] = s.enabled?.[l] ?? DEFAULTS.enabled[l] ?? true;
+    const legacyLayer = Object.keys(REPEATED).find(key => REPEATED[key] === l);
+    out.repeats[l] = Math.round(number(s.repeats?.[l], repeatDefaults[l] || 1, 1, 9));
+    out.empty[l] = number(s.empty?.[l] ?? s.empty?.[legacyLayer], DEFAULTS.empty[l] ?? 0, 0, 1);
+    out.enabled[l] = s.enabled?.[l] ?? s.enabled?.[legacyLayer] ?? DEFAULTS.enabled[l] ?? true;
   }
   return out;
 }
@@ -295,14 +308,9 @@ export function pickPlan(catalog, settings, seed) {
   for (const layer of order) {
     const assets = byLayer[layer];
     if (!s.enabled[layer] || !assets.length) continue;
-    if (
-      layer !== "sprite" &&
-      rng() < Math.min(1, s.empty[layer] * (layer === "background" ? 1 : mult))
-    )
-      continue;
-    if (layer === "sprite" && rng() < s.empty[layer]) continue;
-    const count = layer === "sprite" ? spriteCount(s, rng) : 1;
+    const count = layer === "sprite" ? spriteCount(s, rng) : s.repeats[layer];
     for (let i = 0; i < count; i++) {
+      if (rng() < Math.min(1, s.empty[layer] * (layer === "background" ? 1 : mult))) continue;
       const total = assets.reduce((n, a) => n + (a.weight ?? 1), 0);
       if (total <= 0) continue;
       let roll = rng() * total;
@@ -335,13 +343,13 @@ export function pickPlan(catalog, settings, seed) {
 export function metadata(card) {
   return {
     name: card.name,
-    description: "An independently generated Card NFT 2 composition.",
+    description: "An independently generated painting.",
     image: `${card.id}.png`,
     attributes: [
       ...card.recipe.ops.map((o) => ({ trait_type: o.layer, value: o.name })),
     ],
     properties: {
-      generator: "Card NFT 2 Web Generator",
+      generator: "NFT Painting Generator",
       version: 1,
       id: card.id,
       created: card.created,
@@ -358,7 +366,7 @@ export function validateCard(c) {
     !Array.isArray(c.recipe.ops) ||
     c.recipe.ops.length > 128
   )
-    throw Error("Invalid card in backup.");
+    throw Error("Invalid painting in backup.");
   const r = c.recipe;
   if (
     !Number.isInteger(r.width) ||

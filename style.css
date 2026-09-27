@@ -1590,3 +1590,61 @@ body:not(.picker-mode) .tile-actions > .grow { display: none; }
   background: #000;
   border: 1px solid var(--line);
 }
+
+/* Keep the document still while allowing the active dialog to scroll. */
+html:has(dialog[open]), body:has(dialog[open]) {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+html { scrollbar-gutter: stable; }
+dialog { overscroll-behavior: contain; }
+
+#card-dialog select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='m2 2 4 4 4-4' fill='none' stroke='%23cccccc' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px 8px;
+}
+
+.weight-row { grid-template-columns: 20px minmax(90px,150px) minmax(40px,1fr) 34px 96px; }
+.repeat-control { font-size: 10px; gap: 3px; margin-left: 20px; }
+.repeat-control select { width: 68px; padding: 5px; }
+
+.painting-rank { color: var(--dim); font-size: 11px; white-space: nowrap; }
+.painting-rank.top-half { color: #fff; }
+.painting-rank.top-ten { color: var(--accent); }
+.painting-rank.top-one { color: #ff4545; }
+
+.tile-actions .edit-painting { color: var(--accent); }
+.tile-actions .remove-painting { color: #ff4545; font-size: 18px; line-height: 1; }
+
+.tile-actions { align-items: stretch; }
+.tile-actions .remove-painting { font-size: 11px; line-height: normal; }
+
+.remove-icon { display: inline-block; transform: scale(1.25); }
+
+#card-dialog { width: 1180px; max-width: calc(100vw - 24px); max-height: 96dvh; }
+#card-dialog .studio { grid-template-columns: minmax(0, 1fr) 390px; gap: 24px; }
+#card-dialog .studio-art img { max-height: 82dvh; }
+#card-dialog #studio-layers { max-height: 44dvh; }
+#card-dialog .studio-layer { padding: 6px 8px; margin-bottom: 5px; }
+#card-dialog .studio-layer-header { margin-bottom: 4px; }
+#card-dialog .studio-layer select { padding-top: 5px; padding-bottom: 5px; }
+#card-dialog .studio-layer .inline { margin-top: 4px; }
+#card-dialog .studio-layer input[type="range"] { margin-top: 0; margin-bottom: 0; }
+@media (max-width: 760px) {
+  #card-dialog .studio { grid-template-columns: 1fr; }
+  #card-dialog .studio-art img { max-height: 50dvh; }
+  #card-dialog #studio-layers { max-height: 44dvh; }
+}
+
+#card-dialog .studio-buttons { display: flex; flex-direction: column; gap: 8px; }
+#studio-save-actions { display: flex; gap: 8px; }
+#studio-save-actions #apply-card { flex: 1; min-width: 0; }
+#studio-save-actions #revert-card { flex: 0 0 36px; width: 36px; height: 36px; padding: 0; color: #ff4545; font-size: 20px; }
+#studio-save-actions #apply-card { height: 36px; }
+#card-dialog .add-layer-row { align-items: stretch; }
+#card-dialog .add-layer-row select, #card-dialog #add-trait { height: 36px; box-sizing: border-box; }

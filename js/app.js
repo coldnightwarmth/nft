@@ -1,5 +1,8 @@
+import { rankPaintings } from "./rarity.js?v=1";
 import {
   LAYERS,
+  categoryLabel,
+  categoryLayer,
   customLayerFromPath,
   assetsForPack,
   mergedLayer,
@@ -14,7 +17,7 @@ import {
   pickPlan,
   metadata,
   validateCard,
-} from "./core.js?v=drifella-11";
+} from "./core.js?v=drifella-14";
 import { renderBlob, clearImageCache } from "./renderer.js?v=drifella-4";
 import * as storage from "./storage.js?v=drifella-3";
 import { zip } from "./zip.js?v=drifella-3";
@@ -160,6 +163,14 @@ function changeView(next) {
   $("collection-actions").hidden = picker;
   renderGrid();
 }
+let rarityRanks = null, raritySignature = "";
+function refreshRarity(force = false) {
+  const signature = JSON.stringify(cards.map(c => [c.id, c.recipe.ops.map(o => [o.layer, o.name])]));
+  if (force || signature !== raritySignature) {
+    rarityRanks = rankPaintings(cards);
+    raritySignature = signature;
+  }
+}
 function filteredCards() {
   const query = $("search").value.toLowerCase();
   const list = cards.filter(
@@ -169,8 +180,15 @@ function filteredCards() {
         .includes(query),
   );
   const sort = $("sort").value;
+  if (sort === "rarity" || sort === "rarity-last" || rarityRanks) refreshRarity();
   list.sort((a, b) =>
-    sort === "oldest"
+    sort === "rarity-last"
+      ? rarityRanks.get(b.id).rank - rarityRanks.get(a.id).rank || a.created.localeCompare(b.created)
+      : sort === "rarity"
+      ? rarityRanks.get(a.id).rank - rarityRanks.get(b.id).rank || a.created.localeCompare(b.created)
+      : sort === "traits-asc"
+      ? a.recipe.ops.length - b.recipe.ops.length
+      : sort === "oldest"
       ? a.created.localeCompare(b.created)
       : sort === "traits"
           ? b.recipe.ops.length - a.recipe.ops.length
@@ -214,7 +232,7 @@ function renderGrid() {
       view === "picker"
         ? "Start with a fresh batch."
         : cards.length
-          ? "No matching cards."
+          ? "No matching paintings."
           : "Your collection starts here.";
     $("empty").querySelector("p").textContent =
       view === "picker"
@@ -270,7 +288,9 @@ function renderGrid() {
     target.addEventListener("focus", showPreview);
     target.addEventListener("blur", closePreview);
     target.addEventListener("click", () => {
-      $("hover-preview").hidden ? showPreview() : closePreview();
+      if (busy) return;
+      closePreview();
+      run(() => openCard(card));
     });
     art.append(target);
     tile.append(art);
@@ -282,6 +302,14 @@ function renderGrid() {
         el("span", "grow"),
         el("span", "tile-count", `${card.recipe.ops.length} layers`),
       );
+      if (rarityRanks?.has(card.id)) {
+        const rank = rarityRanks.get(card.id).rank;
+        const percentile = rank / cards.length;
+        const tier = percentile <= 0.01 ? "top-one" : percentile <= 0.1 ? "top-ten" : percentile <= 0.5 ? "top-half" : "";
+        const badge = el("span", `painting-rank ${tier}`, `#${rank}`);
+        badge.setAttribute("aria-label", `Rarity rank ${rank} of ${cards.length}`);
+        title.append(badge);
+      }
       tile.append(title);
     }
     const actions = el("div", "tile-actions");
@@ -294,14 +322,19 @@ function renderGrid() {
       save.setAttribute("aria-pressed", String(saved));
       actions.append(
         save,
-        button("Edit", () => openCard(card)),
+        button("Edit", () => openCard(card), "edit-painting"),
       );
     } else {
+      const remove = button("", () => deleteCard(card), "remove-painting");
+      const removeIcon = el("span", "remove-icon", "×");
+      removeIcon.setAttribute("aria-hidden", "true");
+      remove.append(removeIcon);
+      remove.setAttribute("aria-label", `Remove ${card.name}`);
       actions.append(
         el("span", "grow"),
-        button("Edit", () => openCard(card)),
+        button("Edit", () => openCard(card), "edit-painting"),
         button("↓ PNG", () => download(card.png, `${safeName(card.id)}.png`)),
-        button("Remove", () => deleteCard(card), "danger"),
+        remove,
       );
     }
     tile.append(actions);
@@ -349,11 +382,11 @@ async function generateBatch() {
     $("batch-status").textContent = `Rendering ${i + 1} of ${next.length}…`;
     $("generation-progress").textContent = `Generating ${i + 1} of ${next.length}…`;
     const id = crypto.randomUUID(),
-      recipe = pickPlan(catalog(), settings, id);
+      recipe = pickPlan(catalog(), { ...settings, jitter: false, enabled: { ...settings.enabled, sprite: false } }, id);
     const thumbnail = await renderBlob(recipe, allAssets(), { width: 480 });
     next[i] = {
       id,
-      name: `Card ${String(nextBatch).padStart(3, "0")}.${String(i + 1).padStart(2, "0")}`,
+      name: `Painting ${String(nextBatch).padStart(3, "0")}.${String(i + 1).padStart(2, "0")}`,
       created: new Date().toISOString(),
       recipe,
       thumbnail,
@@ -462,7 +495,7 @@ function renderAssetFolders() {
     excluded = new Set(settings.disabledAssets);
   const available = libraryAssets();
   let matches = 0;
-  for (const layer of [...activeLayers(settings)].reverse()) {
+  for (const layer of [...activeLayers(settings)].reverse().filter(l => l !== "sprite")) {
     const assets = available.filter((a) => a.layer === layer);
     const filtered = assets.filter((a) =>
       `${a.name} ${a.sourceLayer || a.layer} ${PACKS.find((p) => p.id === a.pack)?.name || "Local"} ${a.source}`
@@ -477,13 +510,13 @@ function renderAssetFolders() {
     const summary = el("summary", "asset-folder-summary");
     const count = assets.filter((a) => !excluded.has(a.id)).length;
     summary.append(
-      el("strong", "", layer.replace(/^custom:/, "").replace(/^\d+/, "")),
+      el("strong", "", categoryLabel(layer)),
       el("span", "quiet", `${count} / ${assets.length} enabled`),
     );
     const categoryToggle = el("input");
     categoryToggle.type = "checkbox";
     categoryToggle.checked = settings.enabled[layer] !== false;
-    categoryToggle.setAttribute("aria-label", `Enable category ${layer.replace(/^custom:/, "")}`);
+    categoryToggle.setAttribute("aria-label", `Enable category ${categoryLabel(layer)}`);
     categoryToggle.addEventListener("click", e => e.stopPropagation());
     categoryToggle.addEventListener("change", () => run(async () => {
       settings.enabled[layer] = categoryToggle.checked;
@@ -498,7 +531,7 @@ function renderAssetFolders() {
     handle.draggable = true;
     handle.tabIndex = 0;
     handle.setAttribute("role", "button");
-    handle.setAttribute("aria-label", `Reorder ${layer.replace(/^custom:/, "")}; use arrow keys to move`);
+    handle.setAttribute("aria-label", `Reorder ${categoryLabel(layer)}; use arrow keys to move`);
     handle.addEventListener("click", e => { e.preventDefault(); e.stopPropagation(); });
     const reorder = async (target, after) => {
       const order = [...activeLayers(settings)].reverse().filter(l => l !== layer);
@@ -795,7 +828,7 @@ async function loadFiles(files, layer) {
     const path = file.webkitRelativePath || file.name;
     const id = `local:${settings.pack}:${layer}:${path}:${file.size}:${file.lastModified}`;
     next.set(id, {id, layer, pack: settings.pack, ...assetTraits(file.name), path,
-      source: "local", file, group: file.webkitRelativePath?.split("/")[0] || `Files · ${layer.replace(/^custom:/, "")}`});
+      source: "local", file, group: file.webkitRelativePath?.split("/")[0] || `Files · ${categoryLabel(layer)}`});
   }
   local = [...next.values()];
   clearImageCache();
@@ -852,19 +885,13 @@ function settingsUI() {
   $("canvas-width").value = settings.width;
   $("canvas-height").value = settings.height;
   $("canvas-color").value = settings.color;
-  $("sprite-mean").value = settings.spriteMean;
-  $("sprite-max").value = settings.spriteMax;
-  $("burst-chance").value = settings.burstChance * 100;
   $("random-order").checked = settings.randomOrder;
-  $("density-jitter").checked = settings.jitter;
   $("batch-count").value = settings.count;
-  $("sprite-enabled").checked = settings.enabled.sprite;
-  $("sprite-controls").hidden = !settings.enabled.sprite;
   $("layer-settings").replaceChildren();
-  for (const layer of activeLayers(settings).filter((l) => l !== "sprite")) {
+  for (const layer of [...activeLayers(settings)].reverse().filter((l) => l !== "sprite")) {
     const row = el("div", "weight-row"),
       check = el("input"),
-      label = el("label", "", layer.replace(/^custom:/, "")),
+      label = el("label", "", categoryLabel(layer)),
       range = el("input"),
       output = el("output");
     check.type = "checkbox";
@@ -889,7 +916,18 @@ function settingsUI() {
         settings.empty[layer] = 1 - Number(range.value) / 100;
         await persistState();
       });
-    row.append(check, label, range, output);
+    const repeat = el("select");
+    for (let count = 1; count <= 9; count++) repeat.append(option(count, String(count)));
+    repeat.value = Math.min(9, settings.repeats[layer] || 1);
+    repeat.setAttribute("aria-label", `${categoryLabel(layer)} repeat count`);
+    repeat.onchange = () => run(async () => {
+      settings.repeats[layer] = Math.max(1, Math.min(9, Math.round(Number(repeat.value) || 1)));
+      repeat.value = settings.repeats[layer];
+      await persistState();
+    });
+    const repeatLabel = el("label", "repeat-control", "Repeat");
+    repeatLabel.append(repeat);
+    row.append(check, label, range, output, repeatLabel);
     $("layer-settings").append(row);
   }
   $("preset-list").replaceChildren();
@@ -927,14 +965,14 @@ function openCard(card) {
       pack: card.recipe.pack || settings.pack,
       additionalLayers: card.recipe.additionalLayers || settings.additionalLayers,
       customLayers: card.recipe.customLayers || settings.customLayers,
-    }).map((l) => option(l, l)),
+    }).map((l) => option(l, categoryLabel(l))),
   );
   studio = { card: clone(card), original: clone(card), dirty: false };
   $("card-title").textContent = card.name;
   $("card-name").value = card.name;
   $("card-eyebrow").textContent = cards.some((c) => c.id === card.id)
-    ? "SAVED CARD"
-    : "CARD STUDIO";
+    ? "SAVED PAINTING"
+    : "PAINTING STUDIO";
   setStudioImage(card.thumbnail || card.png);
   studioLayers();
   $("card-dialog").showModal();
@@ -958,12 +996,21 @@ async function editRecipe(fn) {
     throw e;
   }
 }
+function updateStudioActions() {
+  if (!studio) return;
+  const changed = JSON.stringify(studio.card.recipe) !== JSON.stringify(studio.original.recipe) ||
+    ($("card-name").value.trim() || studio.original.name) !== studio.original.name;
+  $("studio-save-actions").hidden = !changed;
+}
+$("card-name").addEventListener("input", updateStudioActions);
 function studioLayers() {
   $("studio-layers").replaceChildren();
   const missing = studioMissing();
   $("edit-note").textContent = missing
     ? "Reconnect the original local folders to edit layers. Saved images can still be downloaded."
-    : "Edits stay in this studio until you save. Close to discard them.";
+    : "";
+  $("edit-note").hidden = !missing;
+  updateStudioActions();
   $("apply-card").textContent = cards.some((c) => c.id === studio.card.id)
     ? "Save changes"
     : "Save to collection";
@@ -971,7 +1018,7 @@ function studioLayers() {
     const row = el("div", "studio-layer"),
       heading = el("div", "studio-layer-header"),
       tools = el("div", "layer-tools");
-    heading.append(el("span", "", op.layer));
+    heading.append(el("span", "", categoryLabel(op.layer)));
     for (const [label, action, disabled, title] of [
       [
         "↓",
@@ -1015,7 +1062,7 @@ function studioLayers() {
     const assets = assetsForPack(
       allAssets(),
       studio.card.recipe.pack || settings.pack,
-    ).filter((a) => a.layer === op.layer);
+    ).filter((a) => a.layer === categoryLayer(op.layer));
     if (!assets.some((a) => a.id === op.assetId))
       select.append(option(op.assetId, `${op.name} (reconnect)`));
     for (const a of assets)
@@ -1103,9 +1150,9 @@ async function backup() {
       state: workspace(),
       cards: data,
     }),
-    `card-nft-backup-${new Date().toISOString().slice(0, 10)}.json`,
+    `painting-backup-${new Date().toISOString().slice(0, 10)}.json`,
   );
-  toast("Backup downloaded, including saved card images.");
+  toast("Backup downloaded, including saved painting images.");
 }
 function decodePNG(value) {
   if (
@@ -1134,7 +1181,7 @@ async function restore(file) {
   const incoming = data.cards.map((c) => {
     validateCard(c);
     delete c.rarity; // Accept old backups while dropping the retired field.
-    if (ids.has(c.id)) throw Error("Duplicate card IDs in backup.");
+    if (ids.has(c.id)) throw Error("Duplicate painting IDs in backup.");
     ids.add(c.id);
     return {
       ...c,
@@ -1166,18 +1213,19 @@ async function restore(file) {
   settingsUI();
   assetSummary();
   changeView("collection");
-  toast(`Restored ${incoming.length} cards. Other saved cards were kept.`);
+  toast(`Restored ${incoming.length} paintings. Other saved paintings were kept.`);
 }
 
 for (const pack of PACKS) {
-  $("library-select").append(option(pack.id, pack.name));
+  if (pack.id !== "custom")
+    $("library-select").append(option(pack.id, pack.name));
   if (pack.id !== "custom")
     $("start-set").append(
       option(pack.id, pack.id === "drifella" ? "Drifella 1" : pack.name),
     );
 }
 for (const l of LAYERS) {
-  $("add-layer").append(option(l, l));
+  $("add-layer").append(option(l, categoryLabel(l)));
 }
 for (const b of document.querySelectorAll("[data-close]"))
   b.onclick = () => {
@@ -1238,7 +1286,7 @@ $("file-input").onchange = (e) => run(async () => {
   pendingImages = supportedFiles([...e.target.files]);
   e.target.value = "";
   if (!pendingImages.length) throw Error("No supported images selected.");
-  $("file-layer").replaceChildren(...activeLayers(settings).map(l => option(l, l.replace(/^custom:/, "").replace(/^\d+[ _-]*/, ""))), option("__new__", "Create a new category…"));
+  $("file-layer").replaceChildren(...activeLayers(settings).map(l => option(l, categoryLabel(l))), option("__new__", "Create a new category…"));
   $("pending-images").textContent = `${pendingImages.length} images selected`;
   $("category-fields").hidden = false;
   $("new-category-label").hidden = true;
@@ -1270,11 +1318,7 @@ for (const [id, key, kind] of [
   ["canvas-width", "width", "number"],
   ["canvas-height", "height", "number"],
   ["canvas-color", "color", "text"],
-  ["sprite-mean", "spriteMean", "number"],
-  ["sprite-max", "spriteMax", "number"],
-  ["burst-chance", "burstChance", "percent"],
   ["random-order", "randomOrder", "bool"],
-  ["density-jitter", "jitter", "bool"],
 ])
   $(id).onchange = () =>
     run(async () => {
@@ -1290,12 +1334,6 @@ for (const [id, key, kind] of [
       await persistState();
       settingsUI();
     });
-$("sprite-enabled").onchange = () =>
-  run(async () => {
-    settings.enabled.sprite = $("sprite-enabled").checked;
-    await persistState();
-    settingsUI();
-  });
 $("start-set").onchange = () =>
   run(async () => {
     settings.pack = $("start-set").value;
@@ -1377,13 +1415,10 @@ on("download-card", async () => {
   const c = await materialize(studio.card, studio.dirty);
   download(c.png, `${safeName(c.id)}.png`);
 });
-on("export-card", async () => {
-  syncStudioText();
-  await exportCard(studio.card, studio.dirty);
-});
+on("refresh-rarity", () => { refreshRarity(true); renderGrid(); });
 on("backup-button", backup);
 on("export-all", async () => {
-  if (!cards.length) throw Error("Save some cards first.");
+  if (!cards.length) throw Error("Save some paintings first.");
   const entries = [];
   for (const c of cards) {
     const id = safeName(c.id),
@@ -1394,8 +1429,8 @@ on("export-all", async () => {
       { name: `${folder}/${id}.json`, blob: jsonBlob(metadata(c)) },
     );
   }
-  download(await zip(entries), "card-nft-collection.zip");
-  toast(`Exported ${cards.length} cards with print layers and metadata.`);
+  download(await zip(entries), "painting-collection.zip");
+  toast(`Exported ${cards.length} paintings with print layers and metadata.`);
 });
 document.addEventListener("keydown", (e) => {
   if (
