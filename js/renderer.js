@@ -6,17 +6,46 @@ export function clearImageCache() {
   images.clear();
   boxes.clear();
 }
+// Fetch independent layers concurrently, with bounded network and compressed-memory use.
+const blobs = new Map(), pending = new Map(), waiters = [];
+let fetching = 0, blobBytes = 0;
+async function loadBlob(asset) {
+  if (asset.file) return asset.file;
+  const key = asset.url;
+  if (blobs.has(key)) return blobs.get(key);
+  if (pending.has(key)) return pending.get(key);
+  const task = (async () => {
+    if (fetching >= 8) await new Promise(resolve => waiters.push(resolve));
+    else fetching++;
+    try {
+      const response = await fetch(key);
+      if (!response.ok) throw Error(`Could not load ${asset.name} (${response.status}).`);
+      const blob = await response.blob();
+      blobs.set(key, blob);
+      blobBytes += blob.size;
+      while (blobBytes > 64 * 1024 * 1024 && blobs.size > 1) {
+        const oldest = blobs.keys().next().value;
+        blobBytes -= blobs.get(oldest).size;
+        blobs.delete(oldest);
+      }
+      return blob;
+    } finally {
+      if (waiters.length) waiters.shift()();
+      else fetching--;
+    }
+  })();
+  pending.set(key, task);
+  try { return await task; } finally { pending.delete(key); }
+}
 async function decode(asset) {
-  if (images.has(asset.id)) {
-    const im = images.get(asset.id);
-    images.delete(asset.id);
-    images.set(asset.id, im);
+  const cacheKey = asset.file ? asset.id : asset.url;
+  if (images.has(cacheKey)) {
+    const im = images.get(cacheKey);
+    images.delete(cacheKey);
+    images.set(cacheKey, im);
     return im;
   }
-  const response = asset.file ? null : await fetch(asset.url);
-  if (response && !response.ok)
-    throw Error(`Could not load ${asset.name} (${response.status}).`);
-  const blob = asset.file || (await response.blob());
+  const blob = await loadBlob(asset);
   let im;
   try {
     im = await createImageBitmap(blob);
@@ -38,8 +67,8 @@ async function decode(asset) {
     im.close?.();
     throw Error(`${asset.name} exceeds the 40 megapixel image limit.`);
   }
-  images.set(asset.id, im);
-  while (images.size > 6) {
+  images.set(cacheKey, im);
+  while (images.size > 24) {
     const key = images.keys().next().value;
     images.get(key).close?.();
     images.delete(key);
@@ -74,7 +103,7 @@ function bbox(im, id) {
 export async function render(
   recipe,
   catalog,
-  { width = 480, overlay = false } = {},
+  { width = 480, overlay = false, original = false } = {},
 ) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -86,9 +115,14 @@ export async function render(
     ctx.fillStyle = recipe.color;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
+  const lookup = new Map(catalog.map(a => [a.id, original && a.originalUrl ? { ...a, url: a.originalUrl } : a]));
+  await Promise.all(recipe.ops.filter(op => !overlay || op.layer !== "background").map(op => {
+    const asset = lookup.get(op.assetId);
+    return asset ? loadBlob(asset) : Promise.resolve();
+  }));
   for (const op of recipe.ops) {
     if (overlay && op.layer === "background") continue;
-    const a = catalog.find((a) => a.id === op.assetId);
+    const a = lookup.get(op.assetId);
     if (!a)
       throw Error(
         `Reconnect the asset folder containing “${op.name}” to edit or render this card.`,

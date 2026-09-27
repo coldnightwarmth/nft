@@ -15,7 +15,7 @@ import {
   metadata,
   validateCard,
 } from "./core.js?v=drifella-11";
-import { renderBlob, clearImageCache } from "./renderer.js?v=drifella-3";
+import { renderBlob, clearImageCache } from "./renderer.js?v=drifella-4";
 import * as storage from "./storage.js?v=drifella-3";
 import { zip } from "./zip.js?v=drifella-3";
 
@@ -366,9 +366,11 @@ async function materialize(card, dirty = false) {
   if (!clean.png || dirty) {
     clean.png = await renderBlob(clean.recipe, allAssets(), {
       width: clean.recipe.width,
+      original: true,
     });
     clean.overlay = await renderBlob(clean.recipe, allAssets(), {
       width: clean.recipe.width,
+      original: true,
       overlay: true,
     });
     clean.thumbnail = await renderBlob(clean.recipe, allAssets(), {
@@ -835,6 +837,7 @@ async function loadHosted() {
         decodeURIComponent(url.pathname.split("/").pop()).replace(IMAGE_RE, ""),
       path: a.path,
       url: url.href,
+      originalUrl: manifest.originalsBaseURL ? new URL(a.path, manifest.originalsBaseURL).href : url.href,
       source: "hosted",
     };
   });

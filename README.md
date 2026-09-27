@@ -1,9 +1,9 @@
 # NFT generator
 
-Browser-based Drifella generator and curator.
-
 Live site: https://coldnightwarmth.github.io/nft/
 
-Includes a curated hosted subset of 1,273 asset entries. Load local folders in the app for additional assets. Saved collections stay in browser storage.
+The complete Drifella library is available: 4,824 collection entries, or 4,251 after deduplication in All mode.
 
-Served directly from the main branch with GitHub Pages.
+Full-resolution optimized WebP copies power previews. PNG and print exports use original lossless 932×1006 assets hosted on the originals branch. Local folders are supported. Collections are saved in browser storage.
+
+GitHub Pages serves main at the repository root.
