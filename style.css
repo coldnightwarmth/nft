@@ -1662,3 +1662,7 @@ dialog { overscroll-behavior: contain; }
   #card-dialog #studio-layers { flex: 1; min-height: 0; max-height: none; }
   #card-dialog .studio-buttons { margin-top: 12px; }
 }
+
+#card-dialog .studio-buttons { margin-top: 20px; }
+
+#card-dialog #download-card { margin-top: 16px; }

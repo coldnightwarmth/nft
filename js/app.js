@@ -19,7 +19,7 @@ import {
   validateCard,
 } from "./core.js?v=drifella-14";
 import { renderBlob, clearImageCache } from "./renderer.js?v=drifella-4";
-import * as storage from "./storage.js?v=drifella-3";
+import * as storage from "./storage.js?v=drifella-4";
 import { zip } from "./zip.js?v=drifella-3";
 
 const $ = (id) => document.getElementById(id);
@@ -93,6 +93,7 @@ async function run(fn) {
     busy = false;
     document.body.classList.remove("busy");
     updateCounts();
+    await saveSession();
     $("undo-button").disabled = !history.length;
     if (studio)
       $("add-trait").disabled =
@@ -643,6 +644,7 @@ function renderAssetFolders() {
         const preview = button(
           "",
           () => {
+            $("asset-preview-dialog").dataset.assetId = a.id;
             $("asset-preview-title").textContent = a.name;
             $("asset-preview-image").src = assetURL(a);
             $("asset-preview-image").alt = a.name;
@@ -968,8 +970,10 @@ function openCard(card) {
       pack: card.recipe.pack || settings.pack,
       additionalLayers: card.recipe.additionalLayers || settings.additionalLayers,
       customLayers: card.recipe.customLayers || settings.customLayers,
-    }).map((l) => option(l, categoryLabel(l))),
+    }).filter(l => l !== "sprite").map((l) => option(l, categoryLabel(l))),
   );
+  const overlayOption = [...$("add-layer").options].find(o => categoryLabel(o.value).toLowerCase() === "overlay");
+  if (overlayOption) $("add-layer").value = overlayOption.value;
   studio = { card: clone(card), original: clone(card), dirty: false };
   $("card-title").textContent = card.name;
   $("card-name").value = card.name;
@@ -1228,7 +1232,7 @@ for (const pack of PACKS) {
     );
 }
 for (const l of LAYERS) {
-  $("add-layer").append(option(l, categoryLabel(l)));
+  if (l !== "sprite") $("add-layer").append(option(l, categoryLabel(l)));
 }
 for (const b of document.querySelectorAll("[data-close]"))
   b.onclick = () => {
@@ -1462,6 +1466,89 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+let sessionReady = false, sessionTimer;
+function uiSnapshot() {
+  return {
+    view, curateColumns, dialogs: [...document.querySelectorAll("dialog[open]")].map(d => d.id),
+    fields: Object.fromEntries(["search", "sort", "asset-search", "card-name", "file-layer", "new-category-name", "add-layer"].map(id => [id, $(id).value])),
+    scroll: {page: window.scrollY, ...Object.fromEntries([...document.querySelectorAll("dialog, #studio-layers")].map(e => [e.id,e.scrollTop]))},
+    openFolders: [...openAssetFolders], pages: [...folderPages],
+    previewAsset: $("asset-preview-dialog").dataset.assetId,
+  };
+}
+function saveUI() {
+  if (!sessionReady) return;
+  try { sessionStorage.setItem("painting-ui", JSON.stringify(uiSnapshot())); } catch {}
+}
+async function saveSession() {
+  if (!sessionReady || !dbAvailable) return;
+  saveUI();
+  try { await storage.putSession({slots, local, history, studio, pendingImages, ui: uiSnapshot()}); }
+  catch { /* Keep the application usable when browser storage is full. */ }
+}
+function scheduleSession() {
+  saveUI();
+  clearTimeout(sessionTimer);
+  sessionTimer = setTimeout(saveSession, 150);
+}
+for (const event of ["input", "change", "click", "close", "toggle"]) document.addEventListener(event, scheduleSession, true);
+document.addEventListener("scroll", saveUI, true);
+window.addEventListener("pagehide", saveUI);
+async function restoreSession() {
+  if (!dbAvailable) return;
+  const saved = await storage.getSession();
+  if (!saved) return;
+  let ui = saved.ui;
+  try { ui = JSON.parse(sessionStorage.getItem("painting-ui")) || ui; } catch {}
+  if (!ui) return;
+  slots = saved.slots || [];
+  local = saved.local || [];
+  history = saved.history || [];
+  pendingImages = saved.pendingImages || [];
+  for (const layer of ui.openFolders || []) openAssetFolders.add(layer);
+  for (const [layer,page] of ui.pages || []) folderPages.set(layer,page);
+  for (const [id,value] of Object.entries(ui.fields || {})) if ($(id)) $(id).value = value;
+  curateColumns = ui.curateColumns || 3;
+  zoomCurate(0);
+  assetSummary();
+  changeView(ui.view === "collection" ? "collection" : "picker");
+  for (const id of ui.dialogs || []) {
+    if (id === "card-dialog" && saved.studio) {
+      openCard(saved.studio.original);
+      studio = saved.studio;
+      $("card-name").value = ui.fields?.["card-name"] || studio.card.name;
+      if (studio.dirty && !studioMissing()) {
+        const blob = await renderBlob(studio.card.recipe, allAssets(), {width:800});
+        setStudioImage(blob);
+      }
+      studioLayers();
+    } else if (id === "asset-preview-dialog") {
+      const asset = allAssets().find(a => a.id === ui.previewAsset);
+      if (asset) {
+        $(id).dataset.assetId = asset.id;
+        $("asset-preview-title").textContent = asset.name;
+        $("asset-preview-image").src = assetURL(asset);
+        $("asset-preview-caption").textContent = categoryLabel(asset.layer);
+        $("asset-preview-actions").replaceChildren();
+        if (asset.source === "local") $("asset-preview-actions").append(button("Unload asset", async () => { await unloadAssets([asset]); $(id).close(); }));
+        $(id).showModal();
+      }
+    } else if ($(id)?.tagName === "DIALOG") $(id).showModal();
+  }
+  if (pendingImages.length) {
+    $("file-layer").replaceChildren(...activeLayers(settings).map(l => option(l, categoryLabel(l))), option("__new__", "Create a new category…"));
+    $("file-layer").value = ui.fields?.["file-layer"] || activeLayers(settings)[0];
+    $("pending-images").textContent = `${pendingImages.length} images selected`;
+    $("category-fields").hidden = false;
+    $("new-category-label").hidden = $("file-layer").value !== "__new__";
+  }
+  await new Promise(requestAnimationFrame);
+  for (const [id,top] of Object.entries(ui.scroll || {})) {
+    if (id === "page") window.scrollTo(0,top);
+    else if ($(id)) $(id).scrollTop = top;
+  }
+}
+
 async function init() {
   try {
     const state = await storage.getState();
@@ -1495,6 +1582,8 @@ async function init() {
   assetSummary();
   renderGrid();
   $("batch-status").textContent = "Choose an asset set to begin";
+  await restoreSession();
+  sessionReady = true;
 }
 run(init);
 

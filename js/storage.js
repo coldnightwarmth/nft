@@ -69,3 +69,6 @@ export async function replaceWorkspace(cards, state) {
     tx.onabort = () => reject(tx.error || Error("Undo aborted"));
   });
 }
+
+export const getSession = () => transact("state", "readonly", s => s.get("session"));
+export const putSession = value => transact("state", "readwrite", s => s.put(value, "session"));
