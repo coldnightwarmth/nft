@@ -260,7 +260,7 @@ function renderGrid() {
     target.setAttribute("aria-label", `Preview ${card.name}`);
     let previewToken = 0;
     const showPreview = async () => {
-      if (busy) return;
+      if (busy || document.querySelector("dialog[open]")) return;
       const token = ++previewToken;
       $("hover-preview-image").src = img.src;
       $("hover-preview").hidden = false;
@@ -285,7 +285,9 @@ function renderGrid() {
     };
     target.addEventListener("mouseenter", showPreview);
     target.addEventListener("mouseleave", closePreview);
-    target.addEventListener("focus", showPreview);
+    target.addEventListener("keydown", e => {
+      if (e.key === " ") { e.preventDefault(); showPreview(); }
+    });
     target.addEventListener("blur", closePreview);
     target.addEventListener("click", () => {
       if (busy) return;
@@ -960,6 +962,7 @@ function studioMissing() {
   );
 }
 function openCard(card) {
+  hideHoverPreview();
   $("add-layer").replaceChildren(
     ...activeLayers({
       pack: card.recipe.pack || settings.pack,
@@ -1232,6 +1235,7 @@ for (const b of document.querySelectorAll("[data-close]"))
     if (!busy) $(b.dataset.close).close();
   };
 $("card-dialog").addEventListener("close", () => {
+  hideHoverPreview();
   if (studioURL) URL.revokeObjectURL(studioURL);
   studioURL = null;
   studio = null;
