@@ -1,3 +1,4 @@
+import { spriteSettings, spriteOps } from "./sprites.js?v=2";
 import {
   LAYERS as SOURCE_LAYERS,
   PACKS as SOURCE_PACKS,
@@ -77,8 +78,8 @@ export function assetsForPack(assets, pack) {
   return assets
     .filter((a) =>
       pack === "custom"
-        ? a.pack === "custom"
-        : (pack === "all" && a.pack !== "custom") ||
+        ? a.pack === "custom" || a.pack === "sprite-library"
+        : a.pack === "sprite-library" || (pack === "all" && a.pack !== "custom") ||
           !a.pack ||
           a.pack === "all" ||
           a.pack === pack ||
@@ -129,6 +130,11 @@ export const DEFAULTS = {
   additionalLayers: {},
   layerOrders: {},
   repeats: repeatDefaults,
+  builtinSprites: false,
+  spriteCategories: [],
+  spriteCategoriesEnabled: false,
+  spritePlacement: spriteSettings(),
+  spriteRangeModes: {},
   spriteMean: 2.2,
   spriteMax: 16,
   burstChance: 0.12,
@@ -146,8 +152,18 @@ function baseLayers(settings) {
 }
 export function activeLayers(settings) {
   const layers = baseLayers(settings);
+  if (settings.builtinSprites && !layers.includes("custom:sprites")) {
+    const noise = layers.findIndex(l => categoryLabel(l) === "noise");
+    layers.splice(noise >= 0 ? noise : Math.max(0,layers.length-1),0,"custom:sprites");
+  }
   const saved = settings.layerOrders?.[settings.pack] || [];
-  return [...new Set([...saved.map(categoryLayer).filter(l => layers.includes(l)), ...layers])];
+  const ordered = [...new Set([...saved.map(categoryLayer).filter(l => layers.includes(l)), ...layers])];
+  if (settings.builtinSprites && !saved.includes("custom:sprites")) {
+    ordered.splice(ordered.indexOf("custom:sprites"),1);
+    const noise = ordered.findIndex(l => categoryLabel(l) === "noise");
+    ordered.splice(noise >= 0 ? noise : Math.max(0,ordered.length-1),0,"custom:sprites");
+  }
+  return ordered;
 }
 export function assetTraits(filename) {
   const stem = filename.replace(/\.(png|jpe?g|webp|gif|bmp|avif|svg)$/i, "");
@@ -211,6 +227,11 @@ export function normalizeSettings(s = {}) {
   out.layerOrders = Object.fromEntries(PACKS.map(({id}) => [id,
     [...new Set((Array.isArray(s.layerOrders?.[id]) ? s.layerOrders[id] : []).filter(l => LAYERS.includes(l) || validCustomLayer(l)))]
   ]));
+  out.builtinSprites = !!s.builtinSprites;
+  out.spriteCategories = [...new Set((Array.isArray(s.spriteCategories) ? s.spriteCategories : []).filter(validCustomLayer))];
+  out.spriteCategoriesEnabled = !!s.spriteCategoriesEnabled;
+  out.spritePlacement = spriteSettings(s.spritePlacement);
+  out.spriteRangeModes = Object.fromEntries(Object.keys(out.spritePlacement).map(key => [key, s.spriteRangeModes?.[key] !== false]));
   out.pack = PACKS.some((p) => p.id === s.pack) ? s.pack : DEFAULTS.pack;
   out.width = Math.round(number(s.width, 932, 100, 4096));
   out.height = Math.round(number(s.height, 1006, 100, 4096));
@@ -225,7 +246,7 @@ export function normalizeSettings(s = {}) {
   out.repeats = {};
   out.empty = { ...DEFAULTS.empty };
   out.enabled = { ...DEFAULTS.enabled };
-  for (const l of [...LAYERS, ...out.customLayers, ...Object.values(out.additionalLayers).flat()]) {
+  for (const l of [...LAYERS, ...out.customLayers, ...Object.values(out.additionalLayers).flat(), "custom:sprites"]) {
     const legacyLayer = Object.keys(REPEATED).find(key => REPEATED[key] === l);
     out.repeats[l] = Math.round(number(s.repeats?.[l], repeatDefaults[l] || 1, 1, 9));
     out.empty[l] = number(s.empty?.[l] ?? s.empty?.[legacyLayer], DEFAULTS.empty[l] ?? 0, 0, 1);
@@ -308,6 +329,10 @@ export function pickPlan(catalog, settings, seed) {
   for (const layer of order) {
     const assets = byLayer[layer];
     if (!s.enabled[layer] || !assets.length) continue;
+    if (s.spriteCategoriesEnabled && (layer === "custom:sprites" || s.spriteCategories.includes(layer))) {
+      if (rng() >= s.empty[layer]) ops.push(...spriteOps(assets,layer,s,rng));
+      continue;
+    }
     const count = layer === "sprite" ? spriteCount(s, rng) : s.repeats[layer];
     for (let i = 0; i < count; i++) {
       if (rng() < Math.min(1, s.empty[layer] * (layer === "background" ? 1 : mult))) continue;
@@ -329,11 +354,14 @@ export function pickPlan(catalog, settings, seed) {
       });
     }
   }
+  if (ops.length > 128) throw Error("Too many layers in this painting. Reduce sprite counts or category repeats to stay within 128 layers.");
   return {
     seed: String(seed),
     pack: s.pack,
     customLayers: s.customLayers,
     additionalLayers: s.additionalLayers,
+    builtinSprites: s.builtinSprites,
+    spriteCategories: s.spriteCategories,
     width: s.width,
     height: s.height,
     color: s.color,
@@ -387,6 +415,7 @@ export function validateCard(c) {
     throw Error("Invalid canvas in backup.");
   for (const o of r.ops)
     if (
+      (o.placement === "sprite" && (!Number.isFinite(o.size) || o.size <= 0 || o.size > 1 || !Number.isFinite(o.rotation) || Math.abs(o.rotation) > 180)) ||
       (!LAYERS.includes(o.layer) && !validCustomLayer(o.layer)) ||
       typeof o.assetId !== "string" ||
       typeof o.name !== "string" ||

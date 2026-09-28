@@ -9,6 +9,34 @@ export function clearImageCache() {
 // Fetch independent layers concurrently, with bounded network and compressed-memory use.
 const blobs = new Map(), pending = new Map(), waiters = [];
 let fetching = 0, blobBytes = 0;
+function discardBlob(key) {
+  if (blobs.has(key)) { blobBytes -= blobs.get(key).size; blobs.delete(key); }
+}
+async function fetchAsset(asset) {
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    try {
+      const response = await fetch(asset.url, {signal:controller.signal, cache:attempt ? "reload" : "default"});
+      if (!response.ok) {
+        const error = Error(`Could not load ${asset.name} (${response.status}).`);
+        if (response.status >= 400 && response.status < 500 && ![408,429].includes(response.status)) {
+          error.permanent = true;
+        }
+        throw error;
+      }
+      const blob = await response.blob();
+      if (!blob.size) throw Error(`Empty image response for ${asset.name}.`);
+      return blob;
+    } catch (error) {
+      lastError = error;
+      if (error.permanent) throw error;
+    } finally { clearTimeout(timeout); }
+    if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 300 * 2 ** attempt));
+  }
+  throw Error(`Could not load ${asset.name} after 3 attempts. Please try again.`, {cause:lastError});
+}
 async function loadBlob(asset) {
   if (asset.file) return asset.file;
   const key = asset.url;
@@ -18,9 +46,12 @@ async function loadBlob(asset) {
     if (fetching >= 8) await new Promise(resolve => waiters.push(resolve));
     else fetching++;
     try {
-      const response = await fetch(key);
-      if (!response.ok) throw Error(`Could not load ${asset.name} (${response.status}).`);
-      const blob = await response.blob();
+      let blob;
+      try { blob = await fetchAsset(asset); }
+      catch (error) {
+        if (!asset.originalUrl || asset.originalUrl === asset.url) throw error;
+        blob = await fetchAsset({...asset, url:asset.originalUrl});
+      }
       blobs.set(key, blob);
       blobBytes += blob.size;
       while (blobBytes > 64 * 1024 * 1024 && blobs.size > 1) {
@@ -37,7 +68,7 @@ async function loadBlob(asset) {
   pending.set(key, task);
   try { return await task; } finally { pending.delete(key); }
 }
-async function decode(asset) {
+async function decode(asset, retry = true) {
   const cacheKey = asset.file ? asset.id : asset.url;
   if (images.has(cacheKey)) {
     const im = images.get(cacheKey);
@@ -56,6 +87,12 @@ async function decode(asset) {
       im.src = url;
       await im.decode();
     } catch {
+      if (!asset.file) {
+        discardBlob(asset.url);
+        if (retry) return decode(asset, false);
+        if (asset.originalUrl && asset.originalUrl !== asset.url)
+          return decode({...asset, url:asset.originalUrl}, false);
+      }
       throw Error(
         `Could not decode “${asset.name}”. Check that it is a supported image.`,
       );
@@ -100,15 +137,26 @@ function bbox(im, id) {
   c.width = c.height = 0;
   return result;
 }
+export function prefetchRecipes(recipes, catalog) {
+  const ids = new Set(recipes.flatMap(recipe => recipe.ops.map(op => op.assetId)));
+  // Reuse the bounded eight-request queue and compressed cache, never decode in bulk.
+  return Promise.all(catalog.filter(a => ids.has(a.id)).map(loadBlob));
+}
 export async function render(
   recipe,
   catalog,
-  { width = 480, overlay = false, original = false } = {},
+  { width = 480, overlay = false, original = false, printCanvas = null } = {},
 ) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = Math.round((width * recipe.height) / recipe.width);
   const ctx = canvas.getContext("2d");
+  let printContext;
+  if (printCanvas) {
+    printCanvas.width = canvas.width;
+    printCanvas.height = canvas.height;
+    printContext = printCanvas.getContext("2d");
+  }
   const sx = canvas.width / recipe.width,
     sy = canvas.height / recipe.height;
   if (!overlay) {
@@ -128,8 +176,22 @@ export async function render(
         `Reconnect the asset folder containing “${op.name}” to edit or render this card.`,
       );
     const im = await decode(a);
+    for (const ctx of printContext && op.layer !== "background" ? [canvas.getContext("2d"), printContext] : [canvas.getContext("2d")]) {
     ctx.globalAlpha = op.opacity ?? 1;
-    if (op.layer === "sprite") {
+    if (op.placement === "sprite") {
+      const box = bbox(im, a.id);
+      if (!box) continue;
+      const [x,y,w,h] = box;
+      const dw = op.size * recipe.width * sx, dh = dw * h / w;
+      const angle = (op.rotation || 0) * Math.PI / 180;
+      const halfW = Math.min(canvas.width/2, (Math.abs(dw*Math.cos(angle))+Math.abs(dh*Math.sin(angle)))/2);
+      const halfH = Math.min(canvas.height/2, (Math.abs(dw*Math.sin(angle))+Math.abs(dh*Math.cos(angle)))/2);
+      ctx.save();
+      ctx.translate(halfW+op.rx*Math.max(0,canvas.width-2*halfW),halfH+op.ry*Math.max(0,canvas.height-2*halfH));
+      ctx.rotate(angle);
+      ctx.drawImage(im,x,y,w,h,-dw/2,-dh/2,dw,dh);
+      ctx.restore();
+    } else if (op.layer === "sprite") {
       const box = bbox(im, a.id);
       if (!box) continue;
       const [x, y, w, h] = box;
@@ -147,6 +209,7 @@ export async function render(
         dh * sy,
       );
     } else ctx.drawImage(im, 0, 0, canvas.width, canvas.height);
+    }
   }
   ctx.globalAlpha = 1;
   return canvas;
@@ -167,4 +230,17 @@ export async function renderBlob(recipe, catalog, options) {
   const blob = await toBlob(c);
   c.width = c.height = 0;
   return blob;
+}
+
+export async function renderExports(recipe, catalog) {
+  const print = document.createElement("canvas");
+  let canvas;
+  try {
+    canvas = await render(recipe, catalog, {width:recipe.width, original:true, printCanvas:print});
+    const [png, overlay] = await Promise.all([toBlob(canvas), toBlob(print)]);
+    return {png, overlay};
+  } finally {
+    if (canvas) canvas.width = canvas.height = 0;
+    print.width = print.height = 0;
+  }
 }

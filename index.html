@@ -9,7 +9,7 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect x='8' y='3' width='24' height='34' rx='4' fill='%23ffe66d'/%3E%3C/svg%3E"
     />
-    <link rel="stylesheet" href="./style.css?v=drifella-35" />
+    <link rel="stylesheet" href="./style.css?v=drifella-38" />
   </head>
   <body class="picker-mode">
     <header class="topbar">
@@ -143,6 +143,7 @@
         </div>
         <select id="library-select" aria-label="Drifella asset set"></select>
       </div>
+      <div class="source-card"><strong>Card nft 2 sprites</strong><button id="builtin-sprites-toggle" aria-pressed="false">＋ Add sprites</button></div>
       <div class="source-card">
         <div><strong>Add new layers</strong><p>Add a folder as a category, or add images to a category.</p></div>
         <button id="new-layers-button" class="primary">＋ Add new layers</button>
@@ -174,6 +175,7 @@
     <dialog id="new-layers-dialog" class="panel-dialog">
       <div class="dialog-heading"><h2>Add new layers</h2><button data-close="new-layers-dialog">Close</button></div>
       <p>Each folder becomes a new trait category. Individual images can join an existing category or a new one.</p>
+      <label>New category type<select id="import-category-type"><option value="regular">Regular layer</option><option value="sprite">Sprite category</option></select></label>
       <div class="inline"><button id="folder-button">Load folder</button><button id="files-button">Select images</button></div>
       <div id="category-fields" hidden>
         <p id="pending-images"></p>
@@ -214,6 +216,8 @@
           >Fallback background<input id="canvas-color" type="color"
         /></label>
       </div>
+      <div class="checks"><label><input id="sprite-categories-enabled" type="checkbox" /> Enable sprite categories</label></div>
+      <div id="sprite-placement-controls" hidden><div id="sprite-range-controls"></div><p class="quiet">Ranges are sampled per painting; size and rotation vary per sprite. Spacing is best effort in crowded layouts.</p></div>
       <div class="checks">
         <label
           ><input id="random-order" type="checkbox" /> Randomize layer order
@@ -318,6 +322,6 @@
       >This generator needs JavaScript enabled to composite images in your
       browser.</noscript
     >
-    <script type="module" src="./js/app.js?v=drifella-36"></script>
+    <script type="module" src="./js/app.js?v=drifella-43"></script>
   </body>
 </html>

@@ -1,8 +1,10 @@
+import { SPRITE_RANGES, spriteOps } from "./sprites.js?v=2";
 import { remixRecipe } from "./remix.js?v=1";
 import { rankPaintings } from "./rarity.js?v=1";
 import {
   LAYERS,
   categoryLabel,
+  validCustomLayer,
   categoryLayer,
   customLayerFromPath,
   assetsForPack,
@@ -18,8 +20,8 @@ import {
   pickPlan,
   metadata,
   validateCard,
-} from "./core.js?v=drifella-15";
-import { renderBlob, clearImageCache } from "./renderer.js?v=drifella-4";
+} from "./core.js?v=drifella-17";
+import { renderBlob, renderExports, prefetchRecipes, clearImageCache } from "./renderer.js?v=drifella-7";
 import * as storage from "./storage.js?v=drifella-4";
 import { zip } from "./zip.js?v=drifella-3";
 
@@ -41,12 +43,12 @@ let settings = clone(DEFAULTS),
   gridURLs = [],
   toastTimer;
 const libraryAssets = () =>
-  assetsForPack([...hosted, ...local], settings.pack);
+  assetsForPack([...hosted.filter(a => settings.builtinSprites || a.pack !== "sprite-library"), ...local], settings.pack);
 const catalog = () => {
   const excluded = new Set(settings.disabledAssets);
   return libraryAssets().filter((a) => !excluded.has(a.id));
 };
-const allAssets = () => [...hosted, ...local]; // Disabling hosted generation never breaks existing recipes.
+const allAssets = () => [...new Map([...hosted, ...cards.flatMap(c => c.localAssets || []), ...local].map(a => [a.id, a])).values()]; // Disabling hosted generation never breaks existing recipes.
 const el = (tag, cls, text) => {
   const node = document.createElement(tag);
   if (cls) node.className = cls;
@@ -200,8 +202,10 @@ function filteredCards() {
   );
   return list;
 }
-let hoverURL = null;
+let hoverURL = null, hoverOwner = null, hoverEpoch = 0;
 function hideHoverPreview() {
+  hoverOwner = null;
+  hoverEpoch++;
   $("hover-preview").hidden = true;
   document.body.classList.remove("hover-preview-active");
   if (hoverURL) URL.revokeObjectURL(hoverURL);
@@ -211,6 +215,15 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") hideHoverPreview();
 });
 window.addEventListener("blur", hideHoverPreview);
+document.addEventListener("visibilitychange", hideHoverPreview);
+document.addEventListener("scroll", hideHoverPreview, true);
+document.addEventListener("pointermove", e => {
+  if (hoverOwner && (e.pointerType !== "mouse" || !hoverOwner.contains(document.elementFromPoint(e.clientX, e.clientY)))) hideHoverPreview();
+}, true);
+document.documentElement.addEventListener("pointerleave", hideHoverPreview);
+new MutationObserver(() => {
+  if (document.querySelector("dialog[open]")) hideHoverPreview();
+}).observe(document.body, {subtree:true, attributes:true, attributeFilter:["open"]});
 function renderGrid() {
   hideHoverPreview();
   snapshotURLs();
@@ -261,8 +274,13 @@ function renderGrid() {
     target.type = "button";
     target.setAttribute("aria-label", `Preview ${card.name}`);
     let previewToken = 0;
-    const showPreview = async () => {
-      if (busy || document.querySelector("dialog[open]")) return;
+    const showPreview = async (event) => {
+      if (!event.isTrusted || event.pointerType !== "mouse" || (!event.movementX && !event.movementY) || busy || document.querySelector("dialog[open]")) return;
+      if (!target.contains(document.elementFromPoint(event.clientX, event.clientY))) return;
+      if (hoverOwner === target) return;
+      hideHoverPreview();
+      hoverOwner = target;
+      const epoch = hoverEpoch;
       const token = ++previewToken;
       $("hover-preview-image").src = img.src;
       $("hover-preview").hidden = false;
@@ -273,7 +291,7 @@ function renderGrid() {
           (await renderBlob(card.recipe, allAssets(), {
             width: Math.min(1200, card.recipe.width),
           }));
-        if (token !== previewToken || $("hover-preview").hidden) return;
+        if (token !== previewToken || epoch !== hoverEpoch || hoverOwner !== target || !target.isConnected || !target.matches(":hover") || $("hover-preview").hidden || document.querySelector("dialog[open]")) return;
         if (hoverURL) URL.revokeObjectURL(hoverURL);
         hoverURL = URL.createObjectURL(blob);
         $("hover-preview-image").src = hoverURL;
@@ -285,11 +303,9 @@ function renderGrid() {
       previewToken++;
       hideHoverPreview();
     };
-    target.addEventListener("mouseenter", showPreview);
-    target.addEventListener("mouseleave", closePreview);
-    target.addEventListener("keydown", e => {
-      if (e.key === " ") { e.preventDefault(); showPreview(); }
-    });
+    target.addEventListener("pointermove", showPreview);
+    target.addEventListener("pointerleave", closePreview);
+    target.addEventListener("pointercancel", closePreview);
     target.addEventListener("blur", closePreview);
     target.addEventListener("click", () => {
       if (busy) return;
@@ -338,7 +354,7 @@ function renderGrid() {
       actions.append(
         el("span", "grow"),
         button("Edit", () => openCard(card), "edit-painting"),
-        button("↓ PNG", () => download(card.png, `${safeName(card.id)}.png`)),
+        button("↓ PNG", async () => { const full = await materialize(card); download(full.png, `${safeName(card.id)}.png`); }),
         remove,
       );
     }
@@ -403,25 +419,22 @@ async function remixBatch(source) {
 async function generateBatch() {
   if (!catalog().length)
     throw Error("Load an asset folder or enable the hosted library first.");
-  const next = Array(settings.count).fill(null);
+  const pool = catalog(), assets = allAssets();
   const nextBatch = batch + 1;
-  for (let i = 0; i < next.length; i++) {
-    if (next[i]) continue;
-    $("batch-status").textContent = `Rendering ${i + 1} of ${next.length}…`;
-    $("generation-progress").textContent = `Generating ${i + 1} of ${next.length}…`;
-    const id = crypto.randomUUID(),
-      recipe = pickPlan(catalog(), { ...settings, jitter: false, enabled: { ...settings.enabled, sprite: false } }, id);
-    const thumbnail = await renderBlob(recipe, allAssets(), { width: 480 });
-    next[i] = {
-      id,
-      name: `Painting ${String(nextBatch).padStart(3, "0")}.${String(i + 1).padStart(2, "0")}`,
-      created: new Date().toISOString(),
-      recipe,
-      thumbnail,
-      locked: false,
-    };
-    await new Promise(requestAnimationFrame);
+  const next = Array.from({length:settings.count}, (_,i) => {
+    const id = crypto.randomUUID();
+    return {id, name:`Painting ${String(nextBatch).padStart(3,"0")}.${String(i+1).padStart(2,"0")}`,
+      created:new Date().toISOString(),
+      recipe:pickPlan(pool, {...settings,jitter:false,enabled:{...settings.enabled,sprite:false}},id), locked:false};
+  });
+  // Begin the whole batch's network work before rendering; consume all rejections.
+  const downloads = prefetchRecipes(next.map(c => c.recipe), assets).catch(() => {});
+  for (let i=0;i<next.length;i++) {
+    $("batch-status").textContent = `Rendering ${i+1} of ${next.length}…`;
+    $("generation-progress").textContent = `Generating ${i+1} of ${next.length}…`;
+    next[i].thumbnail = await renderBlob(next[i].recipe, assets, {width:480});
   }
+  await downloads;
   if (dbAvailable) await storage.putState({ ...workspace(), batch: nextBatch });
   checkpoint();
   slots = next;
@@ -432,24 +445,22 @@ async function materialize(card, dirty = false) {
   const clean = { ...card };
   delete clean.locked;
   if (!clean.png || dirty) {
-    clean.png = await renderBlob(clean.recipe, allAssets(), {
-      width: clean.recipe.width,
-      original: true,
-    });
-    clean.overlay = await renderBlob(clean.recipe, allAssets(), {
-      width: clean.recipe.width,
-      original: true,
-      overlay: true,
-    });
-    clean.thumbnail = await renderBlob(clean.recipe, allAssets(), {
-      width: 480,
-    });
+    Object.assign(clean, await renderExports(clean.recipe, allAssets()));
+    if (!clean.thumbnail || dirty) clean.thumbnail = await renderBlob(clean.recipe, allAssets(), {width:480});
   }
   return clean;
 }
 async function saveCard(card, dirty = false) {
   $("toast").hidden = true;
-  const saved = await materialize(card, dirty);
+  const saved = { ...card };
+  delete saved.locked;
+  if (dirty) {
+    delete saved.png;
+    delete saved.overlay;
+    saved.thumbnail = await renderBlob(saved.recipe, allAssets(), {width:480});
+  }
+  const used = new Set(saved.recipe.ops.map(op => op.assetId));
+  saved.localAssets = allAssets().filter(a => a.file && used.has(a.id));
   await persistCard(saved);
   checkpoint();
   const i = cards.findIndex((c) => c.id === saved.id);
@@ -551,6 +562,8 @@ function renderAssetFolders() {
       await persistState();
       settingsUI();
     }));
+    if (layer === "custom:sprites" || settings.spriteCategories.includes(layer))
+      summary.querySelector("strong").append(el("small", "sprite-category-tag", "SPRITE"));
     summary.prepend(categoryToggle);
     const disclosure = el("span", "category-disclosure", "▸");
     disclosure.setAttribute("aria-hidden", "true");
@@ -754,6 +767,8 @@ $("assets-dialog").addEventListener("close", () => {
 });
 
 function assetSummary() {
+  $("builtin-sprites-toggle").textContent = settings.builtinSprites ? "− Remove sprites" : "＋ Add sprites";
+  $("builtin-sprites-toggle").setAttribute("aria-pressed", settings.builtinSprites);
   $("library-select").value = settings.pack;
   $("start-set").value = settings.pack === "custom" ? "" : settings.pack;
   if (settings.pack === "custom" && !local.some((a) => a.pack === "custom"))
@@ -842,10 +857,14 @@ let pendingImages = [];
 function supportedFiles(files) {
   return files.filter(file => IMAGE_RE.test(file.name) && !(file.webkitRelativePath || file.name).split("/").some(p => p.startsWith(".")));
 }
-async function loadFiles(files, layer) {
+async function loadFiles(files, layer, spriteCategory = false) {
   files = supportedFiles(files);
   if (!files.length) throw Error("No supported images found.");
   const nextSettings = clone(settings);
+  if (spriteCategory) {
+    nextSettings.spriteCategories = [...new Set([...nextSettings.spriteCategories, layer])];
+    nextSettings.spriteCategoriesEnabled = true;
+  }
   if (!activeLayers(settings).includes(layer)) {
     if (settings.pack === "custom") nextSettings.customLayers.push(layer);
     else (nextSettings.additionalLayers[settings.pack] ||= []).push(layer);
@@ -880,11 +899,15 @@ async function loadHosted() {
       `Hosted manifest unavailable (${response.status}). Load a local folder to start.`,
     );
   const manifest = await response.json();
+  const spriteResponse = await fetch(new URL("./assets/sprites.json", document.baseURI), {cache:"no-store"});
+  if (!spriteResponse.ok) throw Error("Could not load the sprite library.");
+  const spriteManifest = await spriteResponse.json();
+  manifest.assets.push(...spriteManifest.assets.map(a => ({...a, losslessHosted:true})));
   if (manifest.version !== 1 || !Array.isArray(manifest.assets))
     throw Error("Hosted manifest must have version 1 and an assets array.");
   const seen = new Set();
   hosted = manifest.assets.map((a, i) => {
-    if (!LAYERS.includes(a.layer) || typeof a.path !== "string")
+    if ((!LAYERS.includes(a.layer) && !validCustomLayer(a.layer)) || typeof a.path !== "string")
       throw Error(
         `Hosted asset ${i} has an unsupported layer “${a.layer}” or a missing path. Refresh to load the latest library.`,
       );
@@ -905,12 +928,67 @@ async function loadHosted() {
         decodeURIComponent(url.pathname.split("/").pop()).replace(IMAGE_RE, ""),
       path: a.path,
       url: url.href,
-      originalUrl: manifest.originalsBaseURL ? new URL(a.path, manifest.originalsBaseURL).href : url.href,
+      originalUrl: !a.losslessHosted && manifest.originalsBaseURL ? new URL(a.path, manifest.originalsBaseURL).href : url.href,
       source: "hosted",
     };
   });
 }
 function settingsUI() {
+  $("sprite-categories-enabled").checked = settings.spriteCategoriesEnabled;
+  $("sprite-placement-controls").hidden = !settings.spriteCategoriesEnabled;
+  $("sprite-range-controls").replaceChildren();
+  for (const [key,spec] of Object.entries(SPRITE_RANGES)) {
+    const row = el("div", "sprite-range-row compact-sprite-range");
+    row.append(el("strong", "", spec.label));
+    const track = el("div", "sprite-dual-range");
+    const output = el("output");
+    const modeLabel = el("label", "sprite-range-mode");
+    const mode = el("input"); mode.type="checkbox";
+    mode.checked = settings.spriteRangeModes?.[key] !== false;
+    mode.setAttribute("aria-label", `${spec.label} range`);
+    modeLabel.append(mode, el("span", "", "Range"));
+    const sliders = [0,1].map(index => {
+      const input = el("input"); input.type="range"; input.min=spec.min; input.max=spec.max; input.step=1;
+      input.setAttribute("aria-label", `${spec.label} ${index ? "maximum" : "minimum"}`);
+      input.oninput = () => {
+        const value=Number(input.value);
+        settings.spritePlacement[key][index]=value;
+        if (mode.checked) {
+          if(index===0 && value>settings.spritePlacement[key][1]) settings.spritePlacement[key][1]=value;
+          if(index===1 && value<settings.spritePlacement[key][0]) settings.spritePlacement[key][0]=value;
+        }
+        update();
+      };
+      input.onchange=()=>run(persistState);
+      track.append(input);
+      return input;
+    });
+    function update() {
+      const pair=settings.spritePlacement[key];
+      sliders.forEach((slider,i)=>slider.value=pair[i]);
+      sliders[1].hidden=!mode.checked;
+      output.textContent=(mode.checked ? pair.join(" – ") : pair[0])+spec.unit;
+      track.style.setProperty("--range-start", `${100*(pair[0]-spec.min)/(spec.max-spec.min)}%`);
+      track.style.setProperty("--range-end", `${100*((mode.checked?pair[1]:pair[0])-spec.min)/(spec.max-spec.min)}%`);
+    }
+    mode.onchange=()=>run(async()=>{
+      (settings.spriteRangeModes ||= {})[key]=mode.checked;
+      if(mode.checked) settings.spritePlacement[key].sort((a,b)=>a-b);
+      update(); await persistState();
+    });
+    track.addEventListener("pointerdown", event => {
+      if(event.target !== track) return;
+      const rect=track.getBoundingClientRect();
+      const value=Math.round(spec.min+Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width))*(spec.max-spec.min));
+      const pair=settings.spritePlacement[key];
+      const index=mode.checked && Math.abs(value-pair[1])<Math.abs(value-pair[0]) ? 1 : 0;
+      sliders[index].value=value; sliders[index].dispatchEvent(new Event("input")); sliders[index].focus();
+      run(persistState);
+    });
+    update();
+    row.append(track, output, modeLabel);
+    $("sprite-range-controls").append(row);
+  }
   $("canvas-width").value = settings.width;
   $("canvas-height").value = settings.height;
   $("canvas-color").value = settings.color;
@@ -995,6 +1073,7 @@ function openCard(card) {
       pack: card.recipe.pack || settings.pack,
       additionalLayers: card.recipe.additionalLayers || settings.additionalLayers,
       customLayers: card.recipe.customLayers || settings.customLayers,
+      builtinSprites: card.recipe.builtinSprites || settings.builtinSprites,
     }).filter(l => l !== "sprite").map((l) => option(l, categoryLabel(l))),
   );
   const overlayOption = [...$("add-layer").options].find(o => categoryLabel(o.value).toLowerCase() === "overlay");
@@ -1035,7 +1114,14 @@ function updateStudioActions() {
   $("studio-save-actions").hidden = !changed;
 }
 $("card-name").addEventListener("input", updateStudioActions);
+let studioTraitURLs = [];
+function releaseStudioTraits() {
+  studioTraitURLs.forEach(url => URL.revokeObjectURL(url));
+  studioTraitURLs = [];
+}
 function studioLayers() {
+  const scrollTop = $("studio-layers").scrollTop;
+  releaseStudioTraits();
   $("studio-layers").replaceChildren();
   const missing = studioMissing();
   $("edit-note").textContent = missing
@@ -1089,33 +1175,41 @@ function studioLayers() {
     }
     heading.append(tools);
     row.append(heading);
-    const select = el("select");
-    select.setAttribute("aria-label", `Asset for ${op.layer} ${index + 1}`);
-    const assets = assetsForPack(
-      allAssets(),
-      studio.card.recipe.pack || settings.pack,
-    ).filter((a) => a.layer === categoryLayer(op.layer));
-    if (!assets.some((a) => a.id === op.assetId))
-      select.append(option(op.assetId, `${op.name} (reconnect)`));
-    for (const a of assets)
-      select.append(
-        option(a.id, `${a.name}${a.source === "local" ? " · local" : ""}`),
-      );
-    select.value = op.assetId;
-    select.disabled = missing;
-    select.onchange = () =>
-      run(() =>
-        editRecipe(() => {
-          const a = assets.find((a) => a.id === select.value);
-          Object.assign(op, {
-            assetId: a.id,
-            name: a.name,
-            path: a.path,
-            source: a.source,
-          });
-        }),
-      );
-    row.append(select);
+    const assets = assetsForPack(allAssets(), studio.card.recipe.pack || settings.pack)
+      .filter(a => categoryLayer(a.layer) === categoryLayer(op.layer));
+    const picker = el("details", "studio-trait-picker");
+    const summary = el("summary", "", op.name);
+    summary.setAttribute("aria-label", `Choose trait for ${categoryLabel(op.layer)}: ${op.name}`);
+    picker.append(summary);
+    let filled = false;
+    picker.addEventListener("toggle", () => {
+      if (!picker.open || filled) return;
+      filled = true;
+      const gallery = el("div", "studio-trait-gallery");
+      gallery.setAttribute("aria-label", `${categoryLabel(op.layer)} traits`);
+      for (const asset of assets) {
+        const choice = button("", () => editRecipe(() => {
+          Object.assign(op, {assetId:asset.id, name:asset.name, path:asset.path, source:asset.source});
+        }), "studio-trait-choice");
+        choice.disabled = missing;
+        choice.setAttribute("aria-label", `Use ${asset.name}`);
+        choice.setAttribute("aria-pressed", String(asset.id === op.assetId));
+        const image = el("img");
+        image.alt = "";
+        image.loading = "lazy";
+        image.decoding = "async";
+        if (asset.file) {
+          image.src = URL.createObjectURL(asset.file);
+          studioTraitURLs.push(image.src);
+        } else image.src = asset.url;
+        image.onerror = () => { image.hidden = true; };
+        choice.append(image, el("span", "", asset.name));
+        gallery.append(choice);
+      }
+      if (!assets.length) gallery.append(el("p", "muted", "Reconnect this category’s assets to browse traits."));
+      picker.append(gallery);
+    });
+    row.append(picker);
     const opacity = el("input");
     opacity.type = "range";
     opacity.min = 0;
@@ -1128,7 +1222,7 @@ function studioLayers() {
     const fade = el("label", "inline", "Opacity");
     fade.append(opacity);
     row.append(fade);
-    if (op.layer === "sprite") {
+    if (op.layer === "sprite" || op.placement === "sprite") {
       const b = button("↻ Reposition", () =>
         editRecipe(() => {
           op.rx = Math.random();
@@ -1140,6 +1234,7 @@ function studioLayers() {
     }
     $("studio-layers").append(row);
   });
+  $("studio-layers").scrollTop = scrollTop;
   $("add-trait").disabled = missing || studio.card.recipe.ops.length >= 128;
 }
 async function exportCard(card, dirty = false) {
@@ -1167,13 +1262,16 @@ function asDataURL(blob) {
 }
 async function backup() {
   const data = [];
-  for (const c of cards)
+  for (const card of cards) {
+    const c = await materialize(card);
+    const {localAssets, ...portable} = c;
     data.push({
-      ...c,
+      ...portable,
       png: await asDataURL(c.png),
       overlay: await asDataURL(c.overlay),
       thumbnail: await asDataURL(c.thumbnail),
     });
+  }
   download(
     jsonBlob({
       format: "card-nft-web-backup",
@@ -1264,6 +1362,7 @@ for (const b of document.querySelectorAll("[data-close]"))
     if (!busy) $(b.dataset.close).close();
   };
 $("card-dialog").addEventListener("close", () => {
+  releaseStudioTraits();
   hideHoverPreview();
   if (studioURL) URL.revokeObjectURL(studioURL);
   studioURL = null;
@@ -1305,6 +1404,22 @@ $("files-button").onclick = () => {
 $("restore-button").onclick = () => {
   if (!busy) $("restore-input").click();
 };
+on("builtin-sprites-toggle", async () => {
+  settings.builtinSprites = !settings.builtinSprites;
+  if(settings.builtinSprites) {
+    settings.spriteCategoriesEnabled = true;
+    settings.enabled["custom:sprites"] = true;
+    const order = activeLayers(settings).filter(l=>l!=="custom:sprites");
+    const noise=order.findIndex(l=>categoryLabel(l)==="noise");
+    order.splice(noise>=0 ? noise : Math.max(0,order.length-1),0,"custom:sprites");
+    settings.layerOrders[settings.pack]=order;
+  }
+  await persistState(); assetSummary(); settingsUI();
+});
+$("sprite-categories-enabled").onchange = () => run(async () => {
+  settings.spriteCategoriesEnabled = $("sprite-categories-enabled").checked;
+  await persistState(); settingsUI();
+});
 on("new-layers-button", () => {
   pendingImages = [];
   $("category-fields").hidden = true;
@@ -1313,24 +1428,24 @@ on("new-layers-button", () => {
 $("folder-input").onchange = (e) => run(async () => {
   const files = [...e.target.files];
   e.target.value = "";
-  if (files.length) await loadFiles(files, newCategory(files[0].webkitRelativePath.split("/")[0]));
+  if (files.length) await loadFiles(files, newCategory(files[0].webkitRelativePath.split("/")[0]), $("import-category-type").value === "sprite");
 });
 $("file-input").onchange = (e) => run(async () => {
   pendingImages = supportedFiles([...e.target.files]);
   e.target.value = "";
   if (!pendingImages.length) throw Error("No supported images selected.");
-  $("file-layer").replaceChildren(...activeLayers(settings).map(l => option(l, categoryLabel(l))), option("__new__", "Create a new category…"));
+  $("file-layer").replaceChildren(...activeLayers(settings).map(l => option(l, categoryLabel(l))), option("__new__", "Create a new category…"), option("__sprite__", "Create a new sprite category…"));
   $("pending-images").textContent = `${pendingImages.length} images selected`;
   $("category-fields").hidden = false;
   $("new-category-label").hidden = true;
   $("new-category-name").value = "";
 });
 $("file-layer").onchange = () => {
-  $("new-category-label").hidden = $("file-layer").value !== "__new__";
+  $("new-category-label").hidden = !["__new__", "__sprite__"].includes($("file-layer").value);
 };
 on("confirm-images", async () => {
-  const layer = $("file-layer").value === "__new__" ? newCategory($("new-category-name").value) : $("file-layer").value;
-  await loadFiles(pendingImages, layer);
+  const layer = ["__new__", "__sprite__"].includes($("file-layer").value) ? newCategory($("new-category-name").value) : $("file-layer").value;
+  await loadFiles(pendingImages, layer, $("file-layer").value === "__sprite__" || ($("file-layer").value === "__new__" && $("import-category-type").value === "sprite"));
   pendingImages = [];
 });
 $("restore-input").onchange = (e) =>
@@ -1419,6 +1534,10 @@ on("add-trait", () =>
         ry: Math.random(),
         opacity: 1,
       };
+    if (settings.spriteCategoriesEnabled && (layer === "custom:sprites" || settings.spriteCategories.includes(layer))) {
+      const placed = spriteOps([a], layer, {...settings, spritePlacement:{...settings.spritePlacement,count:[1,1],unique:[1,1]}}, Math.random)[0];
+      if (placed) Object.assign(op, placed);
+    }
     if (layer === "background") {
       studio.card.recipe.ops = studio.card.recipe.ops.filter(
         (o) => o.layer !== "background",
@@ -1465,7 +1584,8 @@ on("export-all", () => {
 on("download-collection", async () => {
   if (!Object.values(exportFormats).some(Boolean)) return;
   const entries = [];
-  for (const c of cards) {
+  for (const card of cards) {
+    const c = exportFormats.png || exportFormats.print ? await materialize(card) : card;
     const id = safeName(c.id), folder = id;
     if (exportFormats.png) entries.push({name:`${folder}/${id}.png`,blob:c.png});
     if (exportFormats.print) entries.push({name:`${folder}/${id} print assets.png`,blob:c.overlay});
@@ -1508,7 +1628,7 @@ let sessionReady = false, sessionTimer;
 function uiSnapshot() {
   return {
     view, curateColumns, dialogs: [...document.querySelectorAll("dialog[open]")].map(d => d.id),
-    fields: Object.fromEntries(["search", "sort", "asset-search", "card-name", "file-layer", "new-category-name", "add-layer"].map(id => [id, $(id).value])),
+    fields: Object.fromEntries(["search", "sort", "asset-search", "card-name", "file-layer", "new-category-name", "import-category-type", "add-layer"].map(id => [id, $(id).value])),
     scroll: {page: window.scrollY, ...Object.fromEntries([...document.querySelectorAll("dialog, #studio-layers")].map(e => [e.id,e.scrollTop]))},
     openFolders: [...openAssetFolders], pages: [...folderPages],
     previewAsset: $("asset-preview-dialog").dataset.assetId,
@@ -1520,6 +1640,7 @@ function saveUI() {
 }
 async function saveSession() {
   if (!sessionReady || !dbAvailable) return;
+  clearTimeout(sessionTimer);
   saveUI();
   try { await storage.putSession({slots, local, history, studio, pendingImages, ui: uiSnapshot()}); }
   catch { /* Keep the application usable when browser storage is full. */ }
@@ -1527,9 +1648,9 @@ async function saveSession() {
 function scheduleSession() {
   saveUI();
   clearTimeout(sessionTimer);
-  sessionTimer = setTimeout(saveSession, 150);
+  sessionTimer = setTimeout(() => { if (!busy) saveSession(); }, 150);
 }
-for (const event of ["input", "change", "click", "close", "toggle"]) document.addEventListener(event, scheduleSession, true);
+for (const event of ["input", "change", "close", "toggle"]) document.addEventListener(event, scheduleSession, true);
 document.addEventListener("scroll", saveUI, true);
 window.addEventListener("pagehide", saveUI);
 async function restoreSession() {
@@ -1574,11 +1695,11 @@ async function restoreSession() {
     } else if ($(id)?.tagName === "DIALOG") $(id).showModal();
   }
   if (pendingImages.length) {
-    $("file-layer").replaceChildren(...activeLayers(settings).map(l => option(l, categoryLabel(l))), option("__new__", "Create a new category…"));
+    $("file-layer").replaceChildren(...activeLayers(settings).map(l => option(l, categoryLabel(l))), option("__new__", "Create a new category…"), option("__sprite__", "Create a new sprite category…"));
     $("file-layer").value = ui.fields?.["file-layer"] || activeLayers(settings)[0];
     $("pending-images").textContent = `${pendingImages.length} images selected`;
     $("category-fields").hidden = false;
-    $("new-category-label").hidden = $("file-layer").value !== "__new__";
+    $("new-category-label").hidden = !["__new__", "__sprite__"].includes($("file-layer").value);
   }
   await new Promise(requestAnimationFrame);
   for (const [id,top] of Object.entries(ui.scroll || {})) {
