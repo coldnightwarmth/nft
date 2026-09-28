@@ -127,6 +127,9 @@ export const DEFAULTS = {
   height: 1006,
   count: 6,
   color: "#000000",
+  blendChance: 100,
+  opacityRange: [25, 100],
+  opacityRangeEnabled: true,
   randomBlend: false,
   randomOpacity: false,
   randomOrder: false,
@@ -248,6 +251,9 @@ export function normalizeSettings(s = {}) {
   out.spriteMean = number(s.spriteMean, 2.2, 0, 16);
   out.spriteMax = Math.round(number(s.spriteMax, 16, 0, 32));
   out.burstChance = number(s.burstChance, 0.12, 0, 1);
+  out.blendChance = number(s.blendChance, 100, 0, 100);
+  out.opacityRange = [number(s.opacityRange?.[0],25,0,100),number(s.opacityRange?.[1],100,0,100)].sort((a,b)=>a-b);
+  out.opacityRangeEnabled = s.opacityRangeEnabled !== false;
   out.randomBlend = s.randomBlend === true;
   out.randomOpacity = s.randomOpacity === true;
   out.randomOrder = s.randomOrder ?? false;
@@ -365,8 +371,8 @@ export function pickPlan(catalog, settings, seed) {
     }
   }
   for (const op of ops) {
-    if (s.randomBlend) op.blendMode = BLEND_MODES[Math.floor(rng() * BLEND_MODES.length)];
-    if (s.randomOpacity) op.opacity = (25 + Math.floor(rng() * 76)) / 100;
+    if (s.randomBlend && rng()*100 < s.blendChance) op.blendMode = BLEND_MODES[1 + Math.floor(rng() * (BLEND_MODES.length-1))];
+    if (s.randomOpacity) op.opacity = (s.opacityRange[0] + (s.opacityRangeEnabled ? Math.floor(rng() * (s.opacityRange[1]-s.opacityRange[0]+1)) : 0)) / 100;
   }
   if (ops.length > 128) throw Error("Too many layers in this painting. Reduce sprite counts or category repeats to stay within 128 layers.");
   return {

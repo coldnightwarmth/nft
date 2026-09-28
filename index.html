@@ -222,7 +222,9 @@
       <div class="checks"><label><input id="sprite-categories-enabled" type="checkbox" /> Enable sprite categories</label></div>
       <div id="sprite-placement-controls" hidden><div id="sprite-range-controls"></div></div>
       <div class="checks"><label><input id="random-blend" type="checkbox" /> Randomize blending modes</label></div>
-      <div class="checks"><label><input id="random-opacity" type="checkbox" /> Randomize opacity (25–100%)</label></div>
+      <div id="blend-controls" class="inline" hidden><label for="blend-chance">Chance per layer</label><input id="blend-chance" type="range" min="0" max="100" step="1" /><output id="blend-chance-value">100%</output></div>
+      <div class="checks"><label><input id="random-opacity" type="checkbox" /> Randomize opacity</label></div>
+      <div id="opacity-controls" hidden></div>
       <div class="checks">
         <label
           ><input id="random-order" type="checkbox" /> Randomize layer order
@@ -327,6 +329,6 @@
       >This generator needs JavaScript enabled to composite images in your
       browser.</noscript
     >
-    <script type="module" src="./js/app.js?v=drifella-51"></script>
+    <script type="module" src="./js/app.js?v=drifella-52"></script>
   </body>
 </html>

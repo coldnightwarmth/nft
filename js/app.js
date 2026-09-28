@@ -22,7 +22,7 @@ import {
   pickPlan,
   metadata,
   validateCard,
-} from "./core.js?v=drifella-20";
+} from "./core.js?v=drifella-21";
 import { renderBlob, renderExports, prefetchRecipes, clearImageCache } from "./renderer.js?v=drifella-8";
 import * as storage from "./storage.js?v=drifella-4";
 import { zip } from "./zip.js?v=drifella-3";
@@ -968,14 +968,21 @@ function settingsUI() {
   $("sprite-categories-enabled").checked = settings.spriteCategoriesEnabled;
   $("sprite-placement-controls").hidden = !settings.spriteCategoriesEnabled;
   $("sprite-range-controls").replaceChildren();
-  for (const [key,spec] of Object.entries(SPRITE_RANGES)) {
+  $("opacity-controls").replaceChildren();
+  $("opacity-controls").hidden = !settings.randomOpacity;
+  $("blend-controls").hidden = !settings.randomBlend;
+  $("blend-chance").value = settings.blendChance;
+  $("blend-chance-value").textContent = `${settings.blendChance}%`;
+  for (const [key,spec] of [...Object.entries(SPRITE_RANGES), ["opacity", {label:"Opacity",min:0,max:100,unit:"%"}]]) {
+    const rangeValues = key === "opacity" ? {opacity: settings.opacityRange} : settings.spritePlacement;
+    const rangeModes = key === "opacity" ? {opacity: settings.opacityRangeEnabled} : settings.spriteRangeModes;
     const row = el("div", "sprite-range-row compact-sprite-range");
     row.append(el("strong", "", spec.label));
     const track = el("div", "sprite-dual-range");
     const output = el("output");
     const modeLabel = el("label", "sprite-range-mode");
     const mode = el("input"); mode.type="checkbox";
-    mode.checked = settings.spriteRangeModes?.[key] !== false;
+    mode.checked = rangeModes?.[key] !== false;
     mode.setAttribute("aria-label", `${spec.label} range`);
     modeLabel.append(mode, el("span", "", "Range"));
     const sliders = [0,1].map(index => {
@@ -983,10 +990,10 @@ function settingsUI() {
       input.setAttribute("aria-label", `${spec.label} ${index ? "maximum" : "minimum"}`);
       input.oninput = () => {
         const value=Number(input.value);
-        settings.spritePlacement[key][index]=value;
+        rangeValues[key][index]=value;
         if (mode.checked) {
-          if(index===0 && value>settings.spritePlacement[key][1]) settings.spritePlacement[key][1]=value;
-          if(index===1 && value<settings.spritePlacement[key][0]) settings.spritePlacement[key][0]=value;
+          if(index===0 && value>rangeValues[key][1]) rangeValues[key][1]=value;
+          if(index===1 && value<rangeValues[key][0]) rangeValues[key][0]=value;
         }
         update();
       };
@@ -995,7 +1002,7 @@ function settingsUI() {
       return input;
     });
     function update() {
-      const pair=settings.spritePlacement[key];
+      const pair=rangeValues[key];
       sliders.forEach((slider,i)=>slider.value=pair[i]);
       sliders[1].hidden=!mode.checked;
       output.textContent=(mode.checked ? pair.join(" – ") : pair[0])+spec.unit;
@@ -1003,8 +1010,9 @@ function settingsUI() {
       track.style.setProperty("--range-end", `${100*((mode.checked?pair[1]:pair[0])-spec.min)/(spec.max-spec.min)}%`);
     }
     mode.onchange=()=>run(async()=>{
-      (settings.spriteRangeModes ||= {})[key]=mode.checked;
-      if(mode.checked) settings.spritePlacement[key].sort((a,b)=>a-b);
+      rangeModes[key]=mode.checked;
+      if (key === "opacity") settings.opacityRangeEnabled = mode.checked;
+      if(mode.checked) rangeValues[key].sort((a,b)=>a-b);
       update(); await persistState();
     });
     let rangeDrag = null;
@@ -1012,7 +1020,7 @@ function settingsUI() {
       if(event.target !== track || event.button !== 0 || busy) return;
       const rect=track.getBoundingClientRect();
       const value=spec.min+Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width))*(spec.max-spec.min);
-      const pair=settings.spritePlacement[key];
+      const pair=rangeValues[key];
       if (mode.checked && value > pair[0] && value < pair[1]) {
         event.preventDefault();
         rangeDrag = {pointerId:event.pointerId, x:event.clientX, width:rect.width, pair:[...pair]};
@@ -1029,7 +1037,7 @@ function settingsUI() {
       const {pair, x, width} = rangeDrag;
       const delta = Math.max(spec.min-pair[0], Math.min(spec.max-pair[1],
         Math.round((event.clientX-x)/width*(spec.max-spec.min))));
-      settings.spritePlacement[key] = pair.map(value => value+delta);
+      rangeValues[key].splice(0, 2, ...pair.map(value => value+delta));
       update();
     });
     const finishRangeDrag = event => {
@@ -1044,7 +1052,7 @@ function settingsUI() {
     track.addEventListener("lostpointercapture", finishRangeDrag);
     update();
     row.append(track, output, modeLabel);
-    $("sprite-range-controls").append(row);
+    $(key === "opacity" ? "opacity-controls" : "sprite-range-controls").append(row);
   }
   $("canvas-width").value = settings.width;
   $("canvas-height").value = settings.height;
@@ -1555,6 +1563,11 @@ for (const [id, key, kind] of [
       await persistState();
       settingsUI();
     });
+$("blend-chance").oninput = () => {
+  settings.blendChance = Number($("blend-chance").value);
+  $("blend-chance-value").textContent = `${settings.blendChance}%`;
+};
+$("blend-chance").onchange = () => run(persistState);
 $("start-set").onchange = () =>
   run(async () => {
     settings.pack = $("start-set").value;
