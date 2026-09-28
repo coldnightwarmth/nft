@@ -3,7 +3,7 @@ export const SPRITE_RANGES = {
   unique: {label:'Unique sprites', min:1, max:20, defaults:[2,5], unit:''},
   size: {label:'Size · % of canvas width', min:2, max:60, defaults:[8,20], unit:'%'},
   spacing: {label:'Minimum spacing · % of canvas', min:0, max:40, defaults:[3,10], unit:'%'},
-  rotation: {label:'Rotation', min:-180, max:180, defaults:[-30,30], unit:'°'},
+  rotation: {label:'Rotation', min:-180, max:180, defaults:[0,0], unit:'°'},
 };
 export function spriteSettings(value={}) {
   return Object.fromEntries(Object.entries(SPRITE_RANGES).map(([key,spec])=>{

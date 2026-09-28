@@ -1,5 +1,5 @@
 export const BLEND_MODES = ["source-over", "multiply", "screen", "overlay", "darken", "lighten", "color-dodge", "color-burn", "hard-light", "soft-light", "difference", "exclusion", "hue", "saturation", "color", "luminosity"];
-import { spriteSettings, spriteOps } from "./sprites.js?v=2";
+import { spriteSettings, spriteOps } from "./sprites.js?v=3";
 import {
   LAYERS as SOURCE_LAYERS,
   PACKS as SOURCE_PACKS,
@@ -140,7 +140,7 @@ export const DEFAULTS = {
   spriteCategories: [],
   spriteCategoriesEnabled: false,
   spritePlacement: spriteSettings(),
-  spriteRangeModes: {},
+  spriteRangeModes: {rotation: false},
   spriteMean: 2.2,
   spriteMax: 16,
   burstChance: 0.12,
@@ -239,7 +239,7 @@ export function normalizeSettings(s = {}) {
   out.spriteCategories = [...new Set((Array.isArray(s.spriteCategories) ? s.spriteCategories : []).filter(validCustomLayer))];
   out.spriteCategoriesEnabled = !!s.spriteCategoriesEnabled;
   out.spritePlacement = spriteSettings(s.spritePlacement);
-  out.spriteRangeModes = Object.fromEntries(Object.keys(out.spritePlacement).map(key => [key, s.spriteRangeModes?.[key] !== false]));
+  out.spriteRangeModes = Object.fromEntries(Object.keys(out.spritePlacement).map(key => [key, s.spriteRangeModes?.[key] ?? (key !== "rotation")]));
   out.pack = PACKS.some((p) => p.id === s.pack) ? s.pack : DEFAULTS.pack;
   out.width = Math.round(number(s.width, 932, 100, 4096));
   out.height = Math.round(number(s.height, 1006, 100, 4096));

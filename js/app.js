@@ -1,5 +1,5 @@
 import { matchDrifellaFiles } from "./local-drifella.js?v=1";
-import { SPRITE_RANGES, spriteOps } from "./sprites.js?v=2";
+import { SPRITE_RANGES, spriteOps } from "./sprites.js?v=3";
 import { remixRecipe } from "./remix.js?v=1";
 import { rankPaintings } from "./rarity.js?v=1";
 import {
@@ -22,7 +22,7 @@ import {
   pickPlan,
   metadata,
   validateCard,
-} from "./core.js?v=drifella-19";
+} from "./core.js?v=drifella-20";
 import { renderBlob, renderExports, prefetchRecipes, clearImageCache } from "./renderer.js?v=drifella-8";
 import * as storage from "./storage.js?v=drifella-4";
 import { zip } from "./zip.js?v=drifella-3";
@@ -1288,9 +1288,9 @@ function studioLayers() {
     for (const mode of BLEND_MODES) blend.append(option(mode, mode === "source-over" ? "Normal" : mode.replaceAll("-", " ").replace(/^./, c => c.toUpperCase())));
     blend.value = op.blendMode || "source-over";
     blend.disabled = missing;
-    blend.setAttribute("aria-label", `Blend mode for ${op.name}`);
+    blend.setAttribute("aria-label", `Blend for ${op.name}`);
     blend.onchange = () => run(() => editRecipe(() => { op.blendMode = blend.value; }));
-    const blendLabel = el("label", "inline", "Blend mode");
+    const blendLabel = el("label", "inline", "Blend");
     blendLabel.append(blend);
     row.append(blendLabel);
     if (op.layer === "sprite" || op.placement === "sprite") {
