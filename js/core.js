@@ -374,7 +374,6 @@ export function pickPlan(catalog, settings, seed) {
     if (s.randomBlend && rng()*100 < s.blendChance) op.blendMode = BLEND_MODES[1 + Math.floor(rng() * (BLEND_MODES.length-1))];
     if (s.randomOpacity) op.opacity = (s.opacityRange[0] + (s.opacityRangeEnabled ? Math.floor(rng() * (s.opacityRange[1]-s.opacityRange[0]+1)) : 0)) / 100;
   }
-  if (ops.length > 128) throw Error("Too many layers in this painting. Reduce sprite counts or category repeats to stay within 128 layers.");
   return {
     seed: String(seed),
     pack: s.pack,
@@ -418,8 +417,7 @@ export function validateCard(c) {
     typeof c.id !== "string" ||
     typeof c.name !== "string" ||
     !c.recipe ||
-    !Array.isArray(c.recipe.ops) ||
-    c.recipe.ops.length > 128
+    !Array.isArray(c.recipe.ops)
   )
     throw Error("Invalid painting in backup.");
   const r = c.recipe;

@@ -22,7 +22,7 @@ import {
   pickPlan,
   metadata,
   validateCard,
-} from "./core.js?v=drifella-21";
+} from "./core.js?v=drifella-22";
 import { renderBlob, renderExports, prefetchRecipes, clearImageCache } from "./renderer.js?v=drifella-8";
 import * as storage from "./storage.js?v=drifella-4";
 import { zip } from "./zip.js?v=drifella-3";
@@ -103,7 +103,7 @@ async function run(fn) {
     $("undo-button").disabled = !history.length;
     if (studio)
       $("add-trait").disabled =
-        studioMissing() || studio.card.recipe.ops.length >= 128;
+        studioMissing();
   }
 }
 function on(id, fn) {
@@ -121,8 +121,7 @@ async function persistCard(card) {
 function checkpoint() {
   history.push({
     slots: slots.map((s) => ({ ...s })),
-    cards: [...cards],
-    workspace: clone(workspace()),
+    batch,
   });
   if (history.length > 12) history.shift();
   $("undo-button").disabled = false;
@@ -465,7 +464,6 @@ async function saveCard(card, dirty = false) {
   const used = new Set(saved.recipe.ops.map(op => op.assetId));
   saved.localAssets = allAssets().filter(a => a.file && used.has(a.id));
   await persistCard(saved);
-  checkpoint();
   const i = cards.findIndex((c) => c.id === saved.id);
   if (i < 0) cards.push(saved);
   else cards[i] = saved;
@@ -477,21 +475,18 @@ async function saveCard(card, dirty = false) {
 }
 async function deleteCard(card, quiet = false) {
   if (dbAvailable) await storage.removeCard(card.id);
-  checkpoint();
   cards = cards.filter((c) => c.id !== card.id);
   renderGrid();
-  if (!quiet) toast("Removed from collection. Undo brings it back.");
+  if (!quiet) toast("Removed from collection.");
 }
 async function undo() {
   const state = history.at(-1);
   if (!state) return;
-  if (dbAvailable) await storage.replaceWorkspace(state.cards, state.workspace);
+  const previousBatch = state.batch ?? state.workspace?.batch ?? batch;
+  if (dbAvailable) await storage.putState({...workspace(), batch: previousBatch});
   history.pop();
-  cards = state.cards;
   slots = state.slots;
-  ({ settings, presets, useHosted, batch } = clone(state.workspace));
-  settingsUI();
-  assetSummary();
+  batch = previousBatch;
   renderGrid();
 }
 const openAssetFolders = new Set(),
@@ -1314,7 +1309,7 @@ function studioLayers() {
     $("studio-layers").append(row);
   });
   $("studio-layers").scrollTop = scrollTop;
-  $("add-trait").disabled = missing || studio.card.recipe.ops.length >= 128;
+  $("add-trait").disabled = missing;
 }
 async function exportCard(card, dirty = false) {
   const c = await materialize(card, dirty),
@@ -1411,7 +1406,6 @@ async function restore(file) {
     if (n !== "__proto__" && n !== "constructor")
       nextState.presets[n] = normalizeSettings(p);
   if (dbAvailable) await storage.restoreBackup(incoming, nextState);
-  checkpoint();
   const merged = new Map(cards.map((c) => [c.id, c]));
   for (const c of incoming) merged.set(c.id, c);
   cards = [...merged.values()];
@@ -1751,7 +1745,14 @@ async function restoreSession() {
   applyDrifellaFiles();
   slots = saved.slots || [];
   local = saved.local || [];
-  history = saved.history || [];
+  // Older histories also contain save/remove actions. Keep only batch transitions.
+  let nextBatchIds = JSON.stringify(slots.map(s => s.id));
+  history = (saved.history || []).slice().reverse().filter(state => {
+    const ids = JSON.stringify(state.slots.map(s => s.id));
+    if (ids === nextBatchIds) return false;
+    nextBatchIds = ids;
+    return true;
+  }).reverse().map(state => ({slots:state.slots, batch:state.batch ?? state.workspace?.batch ?? batch}));
   pendingImages = saved.pendingImages || [];
   for (const layer of ui.openFolders || []) openAssetFolders.add(layer);
   for (const [layer,page] of ui.pages || []) folderPages.set(layer,page);
