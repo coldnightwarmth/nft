@@ -700,11 +700,12 @@ function renderAssetFolders() {
         );
         preview.setAttribute("aria-label", `Preview ${a.name}`);
         const img = el("img");
-        img.src = assetURL(a);
+        img.src = a.thumbnailUrl || assetURL(a);
         img.alt = a.name;
         img.loading = "lazy";
         img.decoding = "async";
         img.onerror = () => {
+          if (a.thumbnailUrl && img.src === a.thumbnailUrl) { img.src = assetURL(a); return; }
           img.hidden = true;
           preview.append(el("span", "muted", "Preview unavailable"));
         };
@@ -928,6 +929,7 @@ async function loadHosted() {
         decodeURIComponent(url.pathname.split("/").pop()).replace(IMAGE_RE, ""),
       path: a.path,
       url: url.href,
+      thumbnailUrl: new URL(`thumbs/${a.path}`, manifestURL).href,
       originalUrl: !a.losslessHosted && manifest.originalsBaseURL ? new URL(a.path, manifest.originalsBaseURL).href : url.href,
       source: "hosted",
     };
@@ -1201,8 +1203,11 @@ function studioLayers() {
         if (asset.file) {
           image.src = URL.createObjectURL(asset.file);
           studioTraitURLs.push(image.src);
-        } else image.src = asset.url;
-        image.onerror = () => { image.hidden = true; };
+        } else image.src = asset.thumbnailUrl || asset.url;
+        image.onerror = () => {
+          if (asset.thumbnailUrl && image.src === asset.thumbnailUrl) { image.src = asset.url; return; }
+          image.hidden = true;
+        };
         choice.append(image, el("span", "", asset.name));
         gallery.append(choice);
       }
