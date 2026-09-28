@@ -178,6 +178,7 @@ export async function render(
     const im = await decode(a);
     for (const ctx of printContext && op.layer !== "background" ? [canvas.getContext("2d"), printContext] : [canvas.getContext("2d")]) {
     ctx.globalAlpha = op.opacity ?? 1;
+    ctx.globalCompositeOperation = op.blendMode || "source-over";
     if (op.placement === "sprite") {
       const box = bbox(im, a.id);
       if (!box) continue;

@@ -1,3 +1,4 @@
+export const BLEND_MODES = ["source-over", "multiply", "screen", "overlay", "darken", "lighten", "color-dodge", "color-burn", "hard-light", "soft-light", "difference", "exclusion", "hue", "saturation", "color", "luminosity"];
 import { spriteSettings, spriteOps } from "./sprites.js?v=2";
 import {
   LAYERS as SOURCE_LAYERS,
@@ -126,6 +127,8 @@ export const DEFAULTS = {
   height: 1006,
   count: 6,
   color: "#000000",
+  randomBlend: false,
+  randomOpacity: false,
   randomOrder: false,
   jitter: false,
   disabledAssets: [],
@@ -245,6 +248,8 @@ export function normalizeSettings(s = {}) {
   out.spriteMean = number(s.spriteMean, 2.2, 0, 16);
   out.spriteMax = Math.round(number(s.spriteMax, 16, 0, 32));
   out.burstChance = number(s.burstChance, 0.12, 0, 1);
+  out.randomBlend = s.randomBlend === true;
+  out.randomOpacity = s.randomOpacity === true;
   out.randomOrder = s.randomOrder ?? false;
   out.jitter = s.jitter ?? false;
   out.color = /^#[0-9a-f]{6}$/i.test(s.color || "") ? s.color : DEFAULTS.color;
@@ -359,6 +364,10 @@ export function pickPlan(catalog, settings, seed) {
       });
     }
   }
+  for (const op of ops) {
+    if (s.randomBlend) op.blendMode = BLEND_MODES[Math.floor(rng() * BLEND_MODES.length)];
+    if (s.randomOpacity) op.opacity = (25 + Math.floor(rng() * 76)) / 100;
+  }
   if (ops.length > 128) throw Error("Too many layers in this painting. Reduce sprite counts or category repeats to stay within 128 layers.");
   return {
     seed: String(seed),
@@ -422,6 +431,7 @@ export function validateCard(c) {
     if (
       (o.placement === "sprite" && (!Number.isFinite(o.size) || o.size <= 0 || o.size > 1 || !Number.isFinite(o.rotation) || Math.abs(o.rotation) > 180)) ||
       (!LAYERS.includes(o.layer) && !validCustomLayer(o.layer)) ||
+      (o.blendMode !== undefined && !BLEND_MODES.includes(o.blendMode)) ||
       typeof o.assetId !== "string" ||
       typeof o.name !== "string" ||
       ![o.rx, o.ry, o.opacity].every(Number.isFinite) ||

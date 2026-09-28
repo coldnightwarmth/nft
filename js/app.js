@@ -1,7 +1,9 @@
+import { matchDrifellaFiles } from "./local-drifella.js?v=1";
 import { SPRITE_RANGES, spriteOps } from "./sprites.js?v=2";
 import { remixRecipe } from "./remix.js?v=1";
 import { rankPaintings } from "./rarity.js?v=1";
 import {
+  BLEND_MODES,
   LAYERS,
   categoryLabel,
   validCustomLayer,
@@ -20,8 +22,8 @@ import {
   pickPlan,
   metadata,
   validateCard,
-} from "./core.js?v=drifella-18";
-import { renderBlob, renderExports, prefetchRecipes, clearImageCache } from "./renderer.js?v=drifella-7";
+} from "./core.js?v=drifella-19";
+import { renderBlob, renderExports, prefetchRecipes, clearImageCache } from "./renderer.js?v=drifella-8";
 import * as storage from "./storage.js?v=drifella-4";
 import { zip } from "./zip.js?v=drifella-3";
 
@@ -29,6 +31,7 @@ const $ = (id) => document.getElementById(id);
 let settings = clone(DEFAULTS),
   presets = {},
   hosted = [],
+  drifellaFiles = new Map(),
   local = [],
   useHosted = true,
   slots = [],
@@ -892,6 +895,31 @@ function newCategory(name) {
   while (activeLayers(settings).includes(layer)) layer = `custom:${name} (${suffix++})`;
   return layer;
 }
+function applyDrifellaFiles() {
+  for (const asset of hosted) {
+    if (!drifellaFiles.has(asset.path)) continue;
+    asset.file = drifellaFiles.get(asset.path);
+    asset.thumbnailUrl = null;
+  }
+  $("local-drifella-status").textContent = drifellaFiles.size
+    ? `${drifellaFiles.size} local files connected. Other traits use hosted files.` : "";
+  clearImageCache();
+}
+$("local-drifella-button").onclick = () => {
+  if (!busy) $("local-drifella-input").click();
+};
+$("local-drifella-input").onchange = event => run(async () => {
+  const files = [...event.target.files];
+  event.target.value = "";
+  if (!files.length) return;
+  $("local-drifella-status").textContent = "Matching local files…";
+  const {matches, matchedFiles} = await matchDrifellaFiles(files, hosted);
+  for (const [path, file] of matches) drifellaFiles.set(path, file);
+  applyDrifellaFiles();
+  assetSummary();
+  if (!matchedFiles) throw Error("No matching Drifella layers found. Choose an extracted Drifella collection or trait folder with its original filenames.");
+  toast(`Connected ${matchedFiles} local files. Unmatched files were skipped.`);
+});
 async function loadHosted() {
   const manifestURL = new URL("./assets/manifest.json", document.baseURI),
     response = await fetch(manifestURL, { cache: "no-store" });
@@ -927,6 +955,7 @@ async function loadHosted() {
       name:
         a.name ||
         decodeURIComponent(url.pathname.split("/").pop()).replace(IMAGE_RE, ""),
+      originalPath: a.originalPath,
       path: a.path,
       url: url.href,
       thumbnailUrl: new URL(`thumbs/${a.path}`, manifestURL).href,
@@ -978,15 +1007,41 @@ function settingsUI() {
       if(mode.checked) settings.spritePlacement[key].sort((a,b)=>a-b);
       update(); await persistState();
     });
+    let rangeDrag = null;
     track.addEventListener("pointerdown", event => {
-      if(event.target !== track) return;
+      if(event.target !== track || event.button !== 0 || busy) return;
       const rect=track.getBoundingClientRect();
-      const value=Math.round(spec.min+Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width))*(spec.max-spec.min));
+      const value=spec.min+Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width))*(spec.max-spec.min);
       const pair=settings.spritePlacement[key];
+      if (mode.checked && value > pair[0] && value < pair[1]) {
+        event.preventDefault();
+        rangeDrag = {pointerId:event.pointerId, x:event.clientX, width:rect.width, pair:[...pair]};
+        track.setPointerCapture(event.pointerId);
+        track.classList.add("dragging-range");
+        return;
+      }
       const index=mode.checked && Math.abs(value-pair[1])<Math.abs(value-pair[0]) ? 1 : 0;
-      sliders[index].value=value; sliders[index].dispatchEvent(new Event("input")); sliders[index].focus();
+      sliders[index].value=Math.round(value); sliders[index].dispatchEvent(new Event("input")); sliders[index].focus();
       run(persistState);
     });
+    track.addEventListener("pointermove", event => {
+      if (!rangeDrag || event.pointerId !== rangeDrag.pointerId) return;
+      const {pair, x, width} = rangeDrag;
+      const delta = Math.max(spec.min-pair[0], Math.min(spec.max-pair[1],
+        Math.round((event.clientX-x)/width*(spec.max-spec.min))));
+      settings.spritePlacement[key] = pair.map(value => value+delta);
+      update();
+    });
+    const finishRangeDrag = event => {
+      if (!rangeDrag || event.pointerId !== rangeDrag.pointerId) return;
+      rangeDrag = null;
+      track.classList.remove("dragging-range");
+      if (track.hasPointerCapture(event.pointerId)) track.releasePointerCapture(event.pointerId);
+      run(persistState);
+    };
+    track.addEventListener("pointerup", finishRangeDrag);
+    track.addEventListener("pointercancel", finishRangeDrag);
+    track.addEventListener("lostpointercapture", finishRangeDrag);
     update();
     row.append(track, output, modeLabel);
     $("sprite-range-controls").append(row);
@@ -994,6 +1049,8 @@ function settingsUI() {
   $("canvas-width").value = settings.width;
   $("canvas-height").value = settings.height;
   $("canvas-color").value = settings.color;
+  $("random-blend").checked = settings.randomBlend;
+  $("random-opacity").checked = settings.randomOpacity;
   $("random-order").checked = settings.randomOrder;
   $("batch-count").value = settings.count;
   $("layer-settings").replaceChildren();
@@ -1227,6 +1284,15 @@ function studioLayers() {
     const fade = el("label", "inline", "Opacity");
     fade.append(opacity);
     row.append(fade);
+    const blend = el("select");
+    for (const mode of BLEND_MODES) blend.append(option(mode, mode === "source-over" ? "Normal" : mode.replaceAll("-", " ").replace(/^./, c => c.toUpperCase())));
+    blend.value = op.blendMode || "source-over";
+    blend.disabled = missing;
+    blend.setAttribute("aria-label", `Blend mode for ${op.name}`);
+    blend.onchange = () => run(() => editRecipe(() => { op.blendMode = blend.value; }));
+    const blendLabel = el("label", "inline", "Blend mode");
+    blendLabel.append(blend);
+    row.append(blendLabel);
     if (op.layer === "sprite" || op.placement === "sprite") {
       const b = button("↻ Reposition", () =>
         editRecipe(() => {
@@ -1351,7 +1417,7 @@ async function restore(file) {
   toast(`Restored ${incoming.length} paintings. Other saved paintings were kept.`);
 }
 
-for (const pack of PACKS) {
+for (const pack of [...PACKS.filter(p => p.id !== "none"), ...PACKS.filter(p => p.id === "none")]) {
   if (pack.id !== "custom")
     $("library-select").append(option(pack.id, pack.name));
   if (pack.id !== "custom")
@@ -1471,6 +1537,8 @@ for (const [id, key, kind] of [
   ["canvas-width", "width", "number"],
   ["canvas-height", "height", "number"],
   ["canvas-color", "color", "text"],
+  ["random-blend", "randomBlend", "bool"],
+  ["random-opacity", "randomOpacity", "bool"],
   ["random-order", "randomOrder", "bool"],
 ])
   $(id).onchange = () =>
@@ -1533,7 +1601,8 @@ on("add-trait", () =>
         assetId: a.id,
         layer,
         name: a.name,
-        path: a.path,
+        originalPath: a.originalPath,
+      path: a.path,
         source: a.source,
         rx: Math.random(),
         ry: Math.random(),
@@ -1647,7 +1716,7 @@ async function saveSession() {
   if (!sessionReady || !dbAvailable) return;
   clearTimeout(sessionTimer);
   saveUI();
-  try { await storage.putSession({slots, local, history, studio, pendingImages, ui: uiSnapshot()}); }
+  try { await storage.putSession({slots, local, drifellaFiles: [...drifellaFiles], history, studio, pendingImages, ui: uiSnapshot()}); }
   catch { /* Keep the application usable when browser storage is full. */ }
 }
 function scheduleSession() {
@@ -1665,6 +1734,8 @@ async function restoreSession() {
   let ui = saved.ui;
   try { ui = JSON.parse(sessionStorage.getItem("painting-ui")) || ui; } catch {}
   if (!ui) return;
+  drifellaFiles = new Map(saved.drifellaFiles || []);
+  applyDrifellaFiles();
   slots = saved.slots || [];
   local = saved.local || [];
   history = saved.history || [];

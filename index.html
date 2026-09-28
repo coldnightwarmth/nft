@@ -9,7 +9,7 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect x='8' y='3' width='24' height='34' rx='4' fill='%23ffe66d'/%3E%3C/svg%3E"
     />
-    <link rel="stylesheet" href="./style.css?v=drifella-38" />
+    <link rel="stylesheet" href="./style.css?v=drifella-39" />
   </head>
   <body class="picker-mode">
     <header class="topbar">
@@ -141,8 +141,11 @@
             remain separate.
           </p>
         </div>
-        <select id="library-select" aria-label="Drifella asset set"></select>
+        <div class="inline"><select id="library-select" aria-label="Drifella asset set"></select>
+        <button id="local-drifella-button">Use local files</button></div>
       </div>
+      <p id="local-drifella-status" class="quiet" aria-live="polite"></p>
+      <input id="local-drifella-input" type="file" webkitdirectory multiple hidden />
       <div class="source-card"><strong>Card nft 2 sprites</strong><button id="builtin-sprites-toggle" aria-pressed="false">＋ Add sprites</button></div>
       <div class="source-card">
         <div><strong>Add new layers</strong><p>Add a folder as a category, or add images to a category.</p></div>
@@ -217,7 +220,9 @@
         /></label>
       </div>
       <div class="checks"><label><input id="sprite-categories-enabled" type="checkbox" /> Enable sprite categories</label></div>
-      <div id="sprite-placement-controls" hidden><div id="sprite-range-controls"></div><p class="quiet">Ranges are sampled per painting; size and rotation vary per sprite. Spacing is best effort in crowded layouts.</p></div>
+      <div id="sprite-placement-controls" hidden><div id="sprite-range-controls"></div></div>
+      <div class="checks"><label><input id="random-blend" type="checkbox" /> Randomize blending modes</label></div>
+      <div class="checks"><label><input id="random-opacity" type="checkbox" /> Randomize opacity (25–100%)</label></div>
       <div class="checks">
         <label
           ><input id="random-order" type="checkbox" /> Randomize layer order
@@ -322,6 +327,6 @@
       >This generator needs JavaScript enabled to composite images in your
       browser.</noscript
     >
-    <script type="module" src="./js/app.js?v=drifella-45"></script>
+    <script type="module" src="./js/app.js?v=drifella-49"></script>
   </body>
 </html>
