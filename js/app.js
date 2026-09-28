@@ -20,7 +20,7 @@ import {
   pickPlan,
   metadata,
   validateCard,
-} from "./core.js?v=drifella-17";
+} from "./core.js?v=drifella-18";
 import { renderBlob, renderExports, prefetchRecipes, clearImageCache } from "./renderer.js?v=drifella-7";
 import * as storage from "./storage.js?v=drifella-4";
 import { zip } from "./zip.js?v=drifella-3";

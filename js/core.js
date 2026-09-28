@@ -68,6 +68,7 @@ const ALL_ORDER = [
   "noise",
 ];
 export const PACKS = [
+  { id: "none", name: "None", layers: [] },
   ...SOURCE_PACKS.map(p => ({...p, layers:[...new Set(p.layers.map(categoryLayer))]})),
   { id: "custom", name: "Custom folder", layers: [] },
   { id: "all", name: "All Drifella sets", layers: [...new Set(ALL_ORDER.map(categoryLayer))] },
@@ -77,7 +78,9 @@ export function assetsForPack(assets, pack) {
   const seen = new Set();
   return assets
     .filter((a) =>
-      pack === "custom"
+      pack === "none"
+        ? a.pack === "sprite-library" || (a.source === "local" && a.layer.startsWith("custom:"))
+        : pack === "custom"
         ? a.pack === "custom" || a.pack === "sprite-library"
         : a.pack === "sprite-library" || (pack === "all" && a.pack !== "custom") ||
           !a.pack ||
@@ -142,6 +145,8 @@ export const DEFAULTS = {
   enabled: Object.fromEntries(LAYERS.map((l) => [l, l !== "sprite"])),
 };
 function baseLayers(settings) {
+  if (settings.pack === "none")
+    return [...new Set([...(settings.customLayers || []).filter(validCustomLayer), ...Object.values(settings.additionalLayers || {}).flat()])];
   if (settings.pack === "custom")
     return [...new Set([...(settings.customLayers || []), "sprite"])];
   return [...new Set([
