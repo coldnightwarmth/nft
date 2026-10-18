@@ -1,6 +1,6 @@
 import { createEffectRenderer, planLayerEffects } from "./effects.js?v=1";
 import { createGenerationMetadata } from "./metadata.js?v=1";
-import { createFavorites } from "./favorites.js?v=1";
+import { createFavorites } from "./favorites.js?v=2";
 
 const canvas = document.querySelector("#canvas");
 const context = canvas.getContext("2d");

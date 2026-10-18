@@ -67,13 +67,16 @@ export function createFavorites({ canvas, foreground, getMetadata, recall, downl
   function errorMessage(error) {
     const text = error.name === "QuotaExceededError" ? "Browser storage is full. Download your favorites, then unstar some to make room." : error.message || "Favorites couldn’t be saved in this browser.";
     message.textContent = text;
+    message.hidden = false;
+    position();
     reportError(text);
   }
 
   function drawGallery() {
     releaseThumbnails();
     if (panel.hidden) return;
-    message.textContent = ready ? items.length ? "Click to recall. Unstar the current generation to remove it." : "Star a generation to keep it here." : "Loading favorites…";
+    message.textContent = "";
+    message.hidden = true;
     items.forEach((item, index) => {
       const layerLabel = `${item.layerCount} ${item.layerCount === 1 ? "layer" : "layers"}`;
       const button = document.createElement("button");
