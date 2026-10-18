@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
 import { readFile } from "node:fs/promises";
-import { planLayerEffects } from "../dratinis/effects.js";
+import { planLayerEffects, EFFECT_TYPES, ADDITIONAL_EFFECT_TYPES } from "../dratinis/effects.js";
 import { createGenerationMetadata } from "../dratinis/metadata.js";
 import { EYE_TRAITS, chooseEyeTrait, eyeAssetURLs } from "../dratinis/eyes.js";
 
@@ -43,7 +43,7 @@ async function app({ missingLocalEyes = false, missingHostedEyes = false } = {})
   el("#layers").value = 12;
   el("#background").value = "#f3f0e8";
   el("#effect-chance").value = 50;
-  const toggles = ["pixelation", "overlay", "blur", "halftone"].map(type => {
+  const toggles = EFFECT_TYPES.map(type => {
     const input = new Element(); input.dataset.effect = type; return input;
   });
   const document = {
@@ -325,4 +325,30 @@ test("the eye pool includes all three packs with unique source identities", () =
   for (let i = 0; i < EYE_TRAITS.length; i++) {
     assert.equal(chooseEyeTrait(() => (i + 0.5) / EYE_TRAITS.length), EYE_TRAITS[i]);
   }
+});
+
+test("every added effect survives reorder, undo and favorite recall on Dratinis and eyes", async () => {
+  const { el, toggles, state, sandbox, errors } = await app();
+  el("#enable-eyes").checked = true;
+  await el("#enable-eyes").handlers.change();
+  el("#effect-chance").value = 100;
+  for (const type of ADDITIONAL_EFFECT_TYPES) {
+    toggles.forEach(toggle => { toggle.checked = toggle.dataset.effect === type; });
+    await el("#shuffle-effects").handlers.click();
+    const saved = state();
+    assert(saved.pixels.every(layer => layer.effect.type === type));
+    const record = {
+      metadata: createGenerationMetadata({ order: saved.order, layerCount: saved.count, effects: new Map(saved.effects), eye: saved.eye }, { width: 932, height: 1006, background: "#f3f0e8", exportedAt: "2026-10-18T00:00:00Z" }),
+      foreground: new Blob([JSON.stringify(saved.pixels)]),
+    };
+    await el("#reorder").handlers.click();
+    assert.deepEqual(state().pixels.at(-1), saved.pixels.at(-1));
+    el("#reorder").handlers.contextmenu({ preventDefault() {} });
+    assert.deepEqual(state(), saved);
+    await el("#shuffle-effects").handlers.click();
+    await vm.runInContext("recallFavorite", sandbox)(async () => record);
+    assert.deepEqual(state().pixels, saved.pixels);
+    assert.deepEqual(state().eye, saved.eye);
+  }
+  assert.deepEqual(errors, []);
 });

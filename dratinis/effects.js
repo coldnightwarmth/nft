@@ -1,4 +1,11 @@
-export const EFFECT_TYPES = ["pixelation", "overlay", "blur", "halftone"];
+import { EFFECTS, prepareSource, renderEffect } from "./fx/effects.js?v=2";
+
+export const ADDITIONAL_EFFECT_TYPES = ["posterize", "duotone", "negative", "stencil", "dither", "engraving", "ascii", "neon", "chrome", "paper", "kaleidoscope", "swirl", "wave"];
+export const EFFECT_NAMES = {
+  pixelation: "Pixelation", overlay: "Color overlay", blur: "Field blur", halftone: "Color halftone",
+  ...Object.fromEntries(EFFECTS.filter(effect => ADDITIONAL_EFFECT_TYPES.includes(effect.id)).map(effect => [effect.id, effect.name])),
+};
+export const EFFECT_TYPES = Object.keys(EFFECT_NAMES);
 export const HALFTONE_COLORS = ["#e53235", "#245eea", "#ebbf13", "#141414"];
 
 export function chooseLayerEffect(settings, random = Math.random) {
@@ -73,6 +80,19 @@ export function createEffectRenderer(width, height) {
   function draw(destination, bitmap, recipe) {
     if (!recipe || !EFFECT_TYPES.includes(recipe.type)) {
       destination.drawImage(bitmap, 0, 0, width, height);
+      return;
+    }
+    if (ADDITIONAL_EFFECT_TYPES.includes(recipe.type)) {
+      const source = prepareSource(bitmap, width, height);
+      let rendered;
+      try {
+        rendered = renderEffect(source, recipe.type, recipe.seed);
+        destination.drawImage(rendered, 0, 0);
+      } finally {
+        // Release large backing stores immediately when processing long stacks.
+        source.canvas.width = source.canvas.height = 1;
+        if (rendered) rendered.width = rendered.height = 1;
+      }
       return;
     }
     buffers ??= {

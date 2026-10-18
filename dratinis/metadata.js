@@ -1,9 +1,4 @@
-const EFFECT_NAMES = {
-  pixelation: "Pixelation",
-  overlay: "Color overlay",
-  blur: "Field blur",
-  halftone: "Color halftone",
-};
+import { EFFECT_NAMES } from "./effects.js?v=2";
 
 export function createGenerationMetadata(generation, { width, height, background, exportedAt }) {
   const filenames = generation.order.slice(0, generation.layerCount);

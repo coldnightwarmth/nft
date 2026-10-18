@@ -161,6 +161,14 @@ function resample(source, map) {
   return output;
 }
 
+export function waveCoordinates(x, y, width, height, phase) {
+  // Broad bends with roughly five times the old displacement.
+  return [
+    x + Math.sin(y / height * 11 + phase) * width * .18,
+    y + Math.sin(x / width * 8 + phase) * height * .10,
+  ];
+}
+
 export function renderEffect(source, type, seed = 1) {
   const { canvas, pixels: { data }, light, width: w, height: h, center } = source;
   const output = surface(w, h), ctx = output.getContext("2d");
@@ -214,6 +222,7 @@ export function renderEffect(source, type, seed = 1) {
     ctx.drawImage(edges, 0, 0); ctx.globalCompositeOperation = "screen";
     ctx.filter = `blur(${6 * scale}px)`; ctx.drawImage(edges, 0, 0); ctx.filter = "none";
     ctx.globalCompositeOperation = "destination-in"; ctx.drawImage(canvas, 0, 0);
+    edges.width = edges.height = 1;
   } else if (type === "paper") {
     const palette = [[34, 53, 94], [92, 129, 165], [156, 189, 203], [242, 179, 181], [255, 229, 183]];
     if (random() > .5) palette.splice(1, 3, [102, 76, 136], [197, 119, 149], [238, 181, 147]);
@@ -227,13 +236,14 @@ export function renderEffect(source, type, seed = 1) {
       ctx.shadowColor = "#0a152da0"; ctx.shadowBlur = 3 * scale;
       ctx.shadowOffsetX = 2 * scale; ctx.shadowOffsetY = 5 * scale;
       ctx.drawImage(mask, 0, 0);
+      mask.width = mask.height = 1;
     }
     ctx.shadowColor = "transparent"; ctx.globalCompositeOperation = "destination-in"; ctx.drawImage(canvas, 0, 0);
   } else if (["kaleidoscope", "swirl", "wave"].includes(type)) {
     const phase = random() * Math.PI * 2, direction = random() > .5 ? 1 : -1;
     const cx = center.x, cy = center.y, radius = Math.max(w, h) * .57;
     const segment = Math.PI / (3 + Math.floor(random() * 4));
-    const mapper = type === "wave" ? (x, y) => [x + Math.sin(y / h * 28 + phase) * w * .035, y + Math.sin(x / w * 19 + phase) * h * .018] : (x, y) => {
+    const mapper = type === "wave" ? (x, y) => waveCoordinates(x, y, w, h, phase) : (x, y) => {
       const dx = x - cx, dy = y - cy, r = Math.hypot(dx, dy);
       let angle = Math.atan2(dy, dx);
       if (type === "swirl") angle += direction * 3.8 * Math.max(0, 1 - r / radius) ** 2;

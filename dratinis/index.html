@@ -6,8 +6,8 @@
     <meta name="theme-color" content="#f3f0e8" />
     <title>Dratinis</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="./style.css?v=8" />
-    <script type="module" src="./app.js?v=10"></script>
+    <link rel="stylesheet" href="./style.css?v=9" />
+    <script type="module" src="./app.js?v=11"></script>
   </head>
   <body>
     <main id="viewport" aria-label="Dratini canvas. Scroll to zoom; drag to pan.">
@@ -25,10 +25,25 @@
             <h2 id="effects-heading">Layer effects</h2>
             <button id="effects-close" type="button" aria-label="Close layer effects">×</button>
           </div>
+          <div class="effect-list">
           <label class="effect-option"><span>Pixelation</span><input type="checkbox" role="switch" data-effect="pixelation" aria-label="Pixelation" /><span class="switch-track" aria-hidden="true"></span></label>
           <label class="effect-option"><span>Color overlay</span><input type="checkbox" role="switch" data-effect="overlay" aria-label="Color overlay" /><span class="switch-track" aria-hidden="true"></span></label>
           <label class="effect-option"><span>Field blur</span><input type="checkbox" role="switch" data-effect="blur" aria-label="Field blur" /><span class="switch-track" aria-hidden="true"></span></label>
           <label class="effect-option"><span>Color halftone</span><input type="checkbox" role="switch" data-effect="halftone" aria-label="Color halftone" /><span class="switch-track" aria-hidden="true"></span></label>
+          <label class="effect-option"><span>Posterize</span><input type="checkbox" role="switch" data-effect="posterize" aria-label="Posterize" /><span class="switch-track" aria-hidden="true"></span></label>
+          <label class="effect-option"><span>Duotone</span><input type="checkbox" role="switch" data-effect="duotone" aria-label="Duotone" /><span class="switch-track" aria-hidden="true"></span></label>
+          <label class="effect-option"><span>Negative</span><input type="checkbox" role="switch" data-effect="negative" aria-label="Negative" /><span class="switch-track" aria-hidden="true"></span></label>
+          <label class="effect-option"><span>Stencil</span><input type="checkbox" role="switch" data-effect="stencil" aria-label="Stencil" /><span class="switch-track" aria-hidden="true"></span></label>
+          <label class="effect-option"><span>Ordered dithering</span><input type="checkbox" role="switch" data-effect="dither" aria-label="Ordered dithering" /><span class="switch-track" aria-hidden="true"></span></label>
+          <label class="effect-option"><span>Engraving</span><input type="checkbox" role="switch" data-effect="engraving" aria-label="Engraving" /><span class="switch-track" aria-hidden="true"></span></label>
+          <label class="effect-option"><span>ASCII art</span><input type="checkbox" role="switch" data-effect="ascii" aria-label="ASCII art" /><span class="switch-track" aria-hidden="true"></span></label>
+          <label class="effect-option"><span>Neon edges</span><input type="checkbox" role="switch" data-effect="neon" aria-label="Neon edges" /><span class="switch-track" aria-hidden="true"></span></label>
+          <label class="effect-option"><span>Chrome</span><input type="checkbox" role="switch" data-effect="chrome" aria-label="Chrome" /><span class="switch-track" aria-hidden="true"></span></label>
+          <label class="effect-option"><span>Paper cutout</span><input type="checkbox" role="switch" data-effect="paper" aria-label="Paper cutout" /><span class="switch-track" aria-hidden="true"></span></label>
+          <label class="effect-option"><span>Kaleidoscope</span><input type="checkbox" role="switch" data-effect="kaleidoscope" aria-label="Kaleidoscope" /><span class="switch-track" aria-hidden="true"></span></label>
+          <label class="effect-option"><span>Swirl</span><input type="checkbox" role="switch" data-effect="swirl" aria-label="Swirl" /><span class="switch-track" aria-hidden="true"></span></label>
+          <label class="effect-option"><span>Wave distortion</span><input type="checkbox" role="switch" data-effect="wave" aria-label="Wave distortion" /><span class="switch-track" aria-hidden="true"></span></label>
+          </div>
           <div class="effect-chance">
             <label for="effect-chance">Chance per layer <output id="effect-chance-value" for="effect-chance">50%</output></label>
             <input id="effect-chance" type="range" min="0" max="100" value="50" step="1" />

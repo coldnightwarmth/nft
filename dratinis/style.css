@@ -143,7 +143,9 @@ button:disabled, input:disabled { opacity: .5; cursor: wait; }
 #effects-panel {
   position: fixed;
   z-index: 5;
-  width: 260px;
+  width: 420px;
+  display: flex;
+  flex-direction: column;
   max-width: calc(100vw - 24px);
   overflow-y: auto;
   padding: 10px 14px 14px;
@@ -152,7 +154,10 @@ button:disabled, input:disabled { opacity: .5; cursor: wait; }
   box-shadow: 0 8px 28px #0003;
 }
 #effects-panel[hidden] { display: none; }
-.effects-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+.effects-heading { display: flex; flex: none; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+.effect-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 20px; max-height: 306px; min-height: 34px; overflow-y: auto; flex: 0 1 auto; padding: 3px; margin: 0 -3px; }
+.effect-list .effect-option { gap: 8px; padding-right: 1px; }
+.effect-list .switch-track { flex: none; }
 .effects-heading h2 { margin: 0; font-size: 12px; font-weight: 500; }
 #effects-close { width: 24px; min-height: 24px; padding: 0; font-size: 18px; border: 0; color: #aaa; }
 #effects-close:hover { background: #262626; color: #fff; }
@@ -163,10 +168,14 @@ button:disabled, input:disabled { opacity: .5; cursor: wait; }
 .effect-option input:checked + .switch-track { background: var(--accent); border-color: var(--accent); }
 .effect-option input:checked + .switch-track::before { transform: translateX(13px); background: #0b0b0b; }
 .effect-option input:focus-visible + .switch-track { outline: 2px solid var(--accent); outline-offset: 3px; }
-.effect-chance { margin-top: 10px; padding-top: 12px; border-top: 1px solid #303030; }
+.effect-chance { flex: none; margin-top: 10px; padding-top: 12px; border-top: 1px solid #303030; }
 .effect-chance label { display: flex; justify-content: space-between; align-items: center; }
 #effect-chance { width: 100%; margin-top: 5px; }
-.eyes-option { margin-top: 10px; padding-top: 8px; border-top: 1px solid #303030; }
+.eyes-option { flex: none; margin-top: 10px; padding-top: 8px; border-top: 1px solid #303030; }
+@media (max-width: 480px) {
+  #effects-panel { width: 280px; }
+  .effect-list { grid-template-columns: minmax(0, 1fr); }
+}
 
 #favorite-star, #favorites-button { width: 28px; padding: 5px; flex: none; }
 #favorite-star[aria-pressed="true"] svg { fill: currentColor; }

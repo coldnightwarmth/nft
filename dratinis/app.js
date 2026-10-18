@@ -1,5 +1,5 @@
-import { createEffectRenderer, planLayerEffects } from "./effects.js?v=1";
-import { createGenerationMetadata } from "./metadata.js?v=2";
+import { createEffectRenderer, planLayerEffects } from "./effects.js?v=2";
+import { createGenerationMetadata } from "./metadata.js?v=3";
 import { createFavorites } from "./favorites.js?v=2";
 import { chooseEyeTrait, eyeAssetURLs } from "./eyes.js?v=1";
 

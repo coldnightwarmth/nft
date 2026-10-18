@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chooseLayerEffect, planLayerEffects, EFFECT_TYPES } from "../dratinis/effects.js";
+import { readFile } from "node:fs/promises";
+import { chooseLayerEffect, planLayerEffects, EFFECT_TYPES, EFFECT_NAMES, ADDITIONAL_EFFECT_TYPES } from "../dratinis/effects.js";
+import { createGenerationMetadata } from "../dratinis/metadata.js";
+import { waveCoordinates } from "../dratinis/fx/effects.js";
+
+const originalEffects = ["pixelation", "overlay", "blur", "halftone"];
 
 test("disabled effects and zero chance leave layers untouched", () => {
   const unexpectedRandom = () => { throw new Error("No random draw should be needed"); };
@@ -11,7 +16,7 @@ test("disabled effects and zero chance leave layers untouched", () => {
 
 test("chance is rolled once per layer, then selects one enabled effect", () => {
   const draws = [0.49, 0.3, 0.5];
-  assert.deepEqual(chooseLayerEffect({ enabled: EFFECT_TYPES, chance: 50 }, () => draws.shift()), {
+  assert.deepEqual(chooseLayerEffect({ enabled: originalEffects, chance: 50 }, () => draws.shift()), {
     type: "overlay", seed: 0x80000000,
   });
   assert.equal(draws.length, 0);
@@ -37,7 +42,7 @@ test("enabled effects have equal odds independent of how many are enabled", () =
 });
 
 test("reorder and new layers preserve existing recipes, including no-effect decisions", () => {
-  const settings = { enabled: EFFECT_TYPES, chance: 100 };
+  const settings = { enabled: originalEffects, chance: 100 };
   const original = planLayerEffects(["a.png", "b.png"], settings, new Map(), () => 0.25);
   original.set("c.png", null);
   const reordered = planLayerEffects(["c.png", "b.png", "a.png", "d.png"], settings, original, () => 0.75);
@@ -48,4 +53,32 @@ test("reorder and new layers preserve existing recipes, including no-effect deci
   assert.equal(reordered.get("d.png").seed, 0xc0000000);
   assert.equal(Object.isFrozen(reordered.get("d.png")), true);
   assert.equal(planLayerEffects(["c.png"], settings, new Map(), () => 0.25).get("c.png").type, "overlay");
+});
+
+test("all 17 effects have individual switches and complete export names, including eye layers", async () => {
+  const html = await readFile(new URL("../dratinis/index.html", import.meta.url), "utf8");
+  const switches = [...html.matchAll(/data-effect="([^"]+)"/g)].map(match => match[1]);
+  assert.deepEqual(switches, EFFECT_TYPES);
+  assert.equal(ADDITIONAL_EFFECT_TYPES.length, 13);
+  assert.equal(EFFECT_TYPES.length, 17);
+  for (const type of EFFECT_TYPES) {
+    const recipe = chooseLayerEffect({ enabled: [type], chance: 100 }, () => .25);
+    const metadata = createGenerationMetadata({
+      order: ["dratini.png"], layerCount: 1,
+      eye: { filename: "eye.png", pack: "drif3", assetPath: "drifella/eye.webp" },
+      effects: new Map([["dratini.png", recipe], ["eye.png", recipe]]),
+    }, { width: 932, height: 1006, background: "#ffffff", exportedAt: "2026-10-18T00:00:00Z" });
+    assert(metadata.layers.every(layer => layer.effect.name === EFFECT_NAMES[type] && layer.effect.type === type));
+    assert.equal(metadata.layers.at(-1).role, "eyes");
+  }
+});
+
+test("wave distortion uses broad bends with over five times the previous displacement", () => {
+  const width = 932, height = 1006;
+  const [x, y] = waveCoordinates(0, 0, width, height, Math.PI / 2);
+  assert(x > width * .035 * 5);
+  assert(y > height * .018 * 5);
+  // Scaling the canvas keeps the same relative bend.
+  const scaled = waveCoordinates(0, 0, width / 2, height / 2, Math.PI / 2);
+  assert.deepEqual(scaled, [x / 2, y / 2]);
 });

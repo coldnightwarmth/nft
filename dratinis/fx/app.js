@@ -1,4 +1,4 @@
-import { EFFECTS, prepareSource, renderEffect, sampleLayers, seededRandom } from "./effects.js?v=1";
+import { EFFECTS, prepareSource, renderEffect, sampleLayers, seededRandom } from "./effects.js?v=2";
 
 const gallery = document.querySelector("#gallery");
 const status = document.querySelector("#status");
