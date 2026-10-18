@@ -12,9 +12,10 @@ export async function zip(entries) {
   const parts = [],
     central = [];
   let offset = 0,
-    centralSize = 0;
-  if (entries.length > 65535) throw Error("Too many files for one ZIP.");
-  for (const entry of entries) {
+    centralSize = 0,
+    count = 0;
+  for await (const entry of entries) {
+    if (++count > 65535) throw Error("Too many files for one ZIP.");
     const name = new TextEncoder().encode(entry.name),
       data = new Uint8Array(await entry.blob.arrayBuffer()),
       crc = crc32(data);
@@ -31,7 +32,8 @@ export async function zip(entries) {
     v.setUint32(22, data.length, true);
     v.setUint16(26, name.length, true);
     local.set(name, 30);
-    parts.push(local, data);
+    // Retain Blob references, not every decoded byte buffer, for large galleries.
+    parts.push(local, entry.blob);
     const c = new Uint8Array(46 + name.length),
       cv = new DataView(c.buffer);
     cv.setUint32(0, 0x02014b50, true);
@@ -52,8 +54,8 @@ export async function zip(entries) {
   const end = new Uint8Array(22),
     ev = new DataView(end.buffer);
   ev.setUint32(0, 0x06054b50, true);
-  ev.setUint16(8, entries.length, true);
-  ev.setUint16(10, entries.length, true);
+  ev.setUint16(8, count, true);
+  ev.setUint16(10, count, true);
   ev.setUint32(12, centralSize, true);
   ev.setUint32(16, offset, true);
   return new Blob([...parts, ...central, end], { type: "application/zip" });
