@@ -1,6 +1,7 @@
 import { createEffectRenderer, planLayerEffects } from "./effects.js?v=1";
-import { createGenerationMetadata } from "./metadata.js?v=1";
+import { createGenerationMetadata } from "./metadata.js?v=2";
 import { createFavorites } from "./favorites.js?v=2";
+import { chooseEyeTrait, eyeAssetURLs } from "./eyes.js?v=1";
 
 const canvas = document.querySelector("#canvas");
 const context = canvas.getContext("2d");
@@ -22,6 +23,7 @@ const effectsPanel = document.querySelector("#effects-panel");
 const effectToggles = [...document.querySelectorAll("[data-effect]")];
 const effectChance = document.querySelector("#effect-chance");
 const effectChanceValue = document.querySelector("#effect-chance-value");
+const enableEyes = document.querySelector("#enable-eyes");
 const effectRenderer = createEffectRenderer(canvas.width, canvas.height);
 const assetsURL = new URL("./assets/", import.meta.url);
 const foreground = document.createElement("canvas");
@@ -30,6 +32,7 @@ foreground.height = canvas.height;
 let images = [];
 let order = [];
 let layerEffects = new Map();
+let eyeLayer = null;
 let activeRender;
 let debounce;
 let hasRendered = false;
@@ -57,8 +60,8 @@ function updateEffectControls() {
   const settings = readEffectSettings();
   effectChanceValue.value = `${settings.chance}%`;
   effectChance.setAttribute("aria-valuetext", `${settings.chance}% chance per layer`);
-  effectsButton.classList.toggle("has-effects", settings.enabled.length > 0 && settings.chance > 0);
-  effectsButton.title = `Layer effects · ${settings.enabled.length} enabled · ${settings.chance}% chance per layer`;
+  effectsButton.classList.toggle("has-effects", enableEyes.checked || (settings.enabled.length > 0 && settings.chance > 0));
+  effectsButton.title = `Layer effects · ${settings.enabled.length} enabled · ${settings.chance}% chance per layer${enableEyes.checked ? " · Eyes enabled" : ""}`;
 }
 
 function positionEffectsPanel() {
@@ -234,15 +237,18 @@ function previousGeneration(event) {
   const previous = generationHistory.pop();
   order = [...previous.order];
   layerEffects = new Map(previous.effects);
+  eyeLayer = previous.eye ?? null;
+  enableEyes.checked = Boolean(eyeLayer);
+  updateEffectControls();
   slider.value = previous.layerCount;
   count.value = slider.value;
   background.value = previous.background;
   const target = foreground.getContext("2d");
   target.clearRect(0, 0, foreground.width, foreground.height);
   target.drawImage(previous.foreground, 0, 0);
-  currentGeneration = { order: [...order], layerCount: previous.layerCount, effects: layerEffects };
+  currentGeneration = { order: [...order], layerCount: previous.layerCount, effects: layerEffects, eye: eyeLayer };
   paint();
-  canvas.setAttribute("aria-label", `${previous.layerCount} randomly layered Dratinis`);
+  updateCanvasLabel();
   canvas.setAttribute("aria-busy", "false");
   status.className = "sr-only";
   status.textContent = `Previous generation restored. ${generationHistory.length} earlier generations available.`;
@@ -265,7 +271,11 @@ async function recallFavorite(load) {
     try {
       controller.signal.throwIfAborted();
       rememberGeneration();
-      const selected = saved.metadata.layers.map(layer => layer.filename);
+      const selected = saved.metadata.layers.filter(layer => layer.role !== "eyes").map(layer => layer.filename);
+      const savedEye = saved.metadata.layers.find(layer => layer.role === "eyes");
+      eyeLayer = savedEye ? { filename: savedEye.filename, pack: savedEye.pack, assetPath: savedEye.assetPath } : null;
+      enableEyes.checked = Boolean(eyeLayer);
+      updateEffectControls();
       const selectedSet = new Set(selected);
       order = [...selected, ...shuffled(images.filter(filename => !selectedSet.has(filename)))];
       layerEffects = new Map(saved.metadata.layers.map(({ filename, effect }) => [filename, effect ? Object.freeze({ type: effect.type, seed: effect.seed }) : null]));
@@ -275,13 +285,14 @@ async function recallFavorite(load) {
       const target = foreground.getContext("2d");
       target.clearRect(0, 0, foreground.width, foreground.height);
       target.drawImage(bitmap, 0, 0);
-      currentGeneration = { order: [...order], layerCount: selected.length, effects: layerEffects };
+      currentGeneration = { order: [...order], layerCount: selected.length, effects: layerEffects, eye: eyeLayer };
       hasRendered = true;
+      enableEyes.disabled = false;
       shuffleEffects.disabled = false;
       download.disabled = exporting;
       paint();
       updateHistoryHint();
-      canvas.setAttribute("aria-label", `${selected.length} randomly layered Dratinis`);
+      updateCanvasLabel();
       status.textContent = "Favorite recalled.";
       return true;
     } finally { bitmap.close(); }
@@ -293,13 +304,39 @@ async function recallFavorite(load) {
   }
 }
 
+function updateCanvasLabel() {
+  canvas.setAttribute("aria-label", `${currentGeneration.layerCount} randomly layered Dratinis${currentGeneration.eye ? " with an eye trait on top" : ""}`);
+}
+
+async function loadLayerBlob(filename, eye, signal) {
+  if (blobs.has(filename)) return blobs.get(filename);
+  const urls = eye ? eyeAssetURLs(eye) : [new URL(filename, assetsURL).href];
+  let lastError;
+  for (const url of urls) {
+    try {
+      signal.throwIfAborted();
+      const response = await fetch(new URL(url), { signal });
+      if (!response.ok) throw new Error(`Unable to load ${filename}`);
+      const blob = await response.blob();
+      blobs.set(filename, blob);
+      return blob;
+    } catch (error) {
+      signal.throwIfAborted();
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
 async function render() {
   activeRender?.abort();
   const controller = new AbortController();
   activeRender = controller;
   const renderOrder = [...order];
   const selected = renderOrder.slice(0, Number(slider.value));
-  const renderEffects = planLayerEffects(selected, readEffectSettings(), layerEffects);
+  const renderEye = eyeLayer;
+  const filenames = renderEye ? [...selected, renderEye.filename] : selected;
+  const renderEffects = planLayerEffects(filenames, readEffectSettings(), layerEffects);
   const draft = document.createElement("canvas");
   draft.width = canvas.width;
   draft.height = canvas.height;
@@ -309,15 +346,9 @@ async function render() {
   status.textContent = "Generating Dratinis…";
 
   try {
-    for (const filename of selected) {
+    for (const filename of filenames) {
       controller.signal.throwIfAborted();
-      let blob = blobs.get(filename);
-      if (!blob) {
-        const response = await fetch(new URL(filename, assetsURL), { signal: controller.signal });
-        if (!response.ok) throw new Error(`Unable to load ${filename}`);
-        blob = await response.blob();
-        blobs.set(filename, blob);
-      }
+      const blob = await loadLayerBlob(filename, filename === renderEye?.filename ? renderEye : null, controller.signal);
       const bitmap = await createImageBitmap(blob);
       try {
         controller.signal.throwIfAborted();
@@ -332,16 +363,23 @@ async function render() {
     target.clearRect(0, 0, foreground.width, foreground.height);
     target.drawImage(draft, 0, 0);
     layerEffects = renderEffects;
-    currentGeneration = { order: renderOrder, layerCount: selected.length, effects: renderEffects };
+    currentGeneration = { order: renderOrder, layerCount: selected.length, effects: renderEffects, eye: renderEye };
+    eyeLayer = renderEye;
+    enableEyes.checked = Boolean(renderEye);
+    updateEffectControls();
     updateHistoryHint();
     shuffleEffects.disabled = false;
     paint();
     hasRendered = true;
+    enableEyes.disabled = false;
     download.disabled = exporting;
-    canvas.setAttribute("aria-label", `${selected.length} randomly layered Dratinis`);
-    status.textContent = `${selected.length} Dratini layers generated.`;
+    updateCanvasLabel();
+    status.textContent = `${selected.length} Dratini layers generated${renderEye ? " with an eye trait on top" : ""}.`;
   } catch (error) {
     if (controller.signal.aborted) return;
+    eyeLayer = currentGeneration?.eye ?? null;
+    enableEyes.checked = Boolean(eyeLayer);
+    updateEffectControls();
     status.className = "error";
     status.textContent = "Some Dratinis couldn’t load. Press Regenerate to try again.";
     console.error(error);
@@ -390,6 +428,7 @@ regenerate.addEventListener("click", () => {
   }
   order = shuffled(images);
   layerEffects = new Map();
+  eyeLayer = enableEyes.checked ? chooseEyeTrait() : null;
   render();
 });
 regenerate.addEventListener("contextmenu", previousGeneration);
@@ -406,6 +445,7 @@ function reorderCurrentGeneration() {
   }
   order = [...rearranged, ...visibleOrder.slice(layerCount)];
   layerEffects = new Map(currentGeneration.effects);
+  eyeLayer = currentGeneration.eye ?? null;
   slider.value = layerCount;
   count.value = slider.value;
   return render();
@@ -418,12 +458,26 @@ function shuffleCurrentEffects() {
   clearTimeout(debounce);
   order = [...currentGeneration.order];
   layerEffects = new Map();
+  eyeLayer = currentGeneration.eye ?? null;
   slider.value = currentGeneration.layerCount;
   count.value = slider.value;
   return render();
 }
 shuffleEffects.addEventListener("click", shuffleCurrentEffects);
 shuffleEffects.addEventListener("contextmenu", previousGeneration);
+
+enableEyes.addEventListener("change", () => {
+  updateEffectControls();
+  if (!currentGeneration) return;
+  clearTimeout(debounce);
+  order = [...currentGeneration.order];
+  layerEffects = new Map(currentGeneration.effects);
+  eyeLayer = enableEyes.checked ? chooseEyeTrait() : null;
+  if (eyeLayer) layerEffects.delete(eyeLayer.filename);
+  slider.value = currentGeneration.layerCount;
+  count.value = slider.value;
+  return render();
+});
 
 function downloadFile(blob, filename) {
   const url = URL.createObjectURL(blob);

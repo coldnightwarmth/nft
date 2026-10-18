@@ -166,7 +166,7 @@ button:disabled, input:disabled { opacity: .5; cursor: wait; }
 .effect-chance { margin-top: 10px; padding-top: 12px; border-top: 1px solid #303030; }
 .effect-chance label { display: flex; justify-content: space-between; align-items: center; }
 #effect-chance { width: 100%; margin-top: 5px; }
-#effects-panel p { margin: 7px 0 0; color: #a5a5a5; line-height: 1.55; font-size: 10px; }
+.eyes-option { margin-top: 10px; padding-top: 8px; border-top: 1px solid #303030; }
 
 #favorite-star, #favorites-button { width: 28px; padding: 5px; flex: none; }
 #favorite-star[aria-pressed="true"] svg { fill: currentColor; }

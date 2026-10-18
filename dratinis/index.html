@@ -6,8 +6,8 @@
     <meta name="theme-color" content="#f3f0e8" />
     <title>Dratinis</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="./style.css?v=7" />
-    <script type="module" src="./app.js?v=9"></script>
+    <link rel="stylesheet" href="./style.css?v=8" />
+    <script type="module" src="./app.js?v=10"></script>
   </head>
   <body>
     <main id="viewport" aria-label="Dratini canvas. Scroll to zoom; drag to pan.">
@@ -33,7 +33,7 @@
             <label for="effect-chance">Chance per layer <output id="effect-chance-value" for="effect-chance">50%</output></label>
             <input id="effect-chance" type="range" min="0" max="100" value="50" step="1" />
           </div>
-          <p>One effect per layer, with equal odds for each enabled effect. Apply with Shuffle FX or Regenerate.</p>
+          <label class="effect-option eyes-option"><span>Enable eyes</span><input id="enable-eyes" type="checkbox" role="switch" aria-label="Enable eyes" disabled /><span class="switch-track" aria-hidden="true"></span></label>
         </section>
       </div>
       <label class="color-control" for="background" title="Background color">
