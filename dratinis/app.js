@@ -1,4 +1,4 @@
-import { createEffectRenderer, planLayerEffects } from "./effects.js?v=2";
+import { createEffectRenderer, planLayerEffects, randomizeEnabledEffects } from "./effects.js?v=3";
 import { createGenerationMetadata } from "./metadata.js?v=3";
 import { createFavorites } from "./favorites.js?v=2";
 import { chooseEyeTrait, eyeAssetURLs } from "./eyes.js?v=1";
@@ -21,6 +21,7 @@ const effectsButton = document.querySelector("#effects-button");
 const effectsControl = document.querySelector(".effects-control");
 const effectsPanel = document.querySelector("#effects-panel");
 const effectToggles = [...document.querySelectorAll("[data-effect]")];
+const randomizeEffects = document.querySelector("#randomize-effects");
 const effectChance = document.querySelector("#effect-chance");
 const effectChanceValue = document.querySelector("#effect-chance-value");
 const enableEyes = document.querySelector("#enable-eyes");
@@ -60,8 +61,15 @@ function updateEffectControls() {
   const settings = readEffectSettings();
   effectChanceValue.value = `${settings.chance}%`;
   effectChance.setAttribute("aria-valuetext", `${settings.chance}% chance per layer`);
-  effectsButton.classList.toggle("has-effects", enableEyes.checked || (settings.enabled.length > 0 && settings.chance > 0));
-  effectsButton.title = `Layer effects · ${settings.enabled.length} enabled · ${settings.chance}% chance per layer${enableEyes.checked ? " · Eyes enabled" : ""}`;
+  effectsButton.classList.toggle("has-effects", randomizeEffects.checked || enableEyes.checked || (settings.enabled.length > 0 && settings.chance > 0));
+  effectsButton.title = `Layer effects · ${settings.enabled.length} enabled · ${settings.chance}% chance per layer${randomizeEffects.checked ? " · Randomize FX on Regenerate" : ""}${enableEyes.checked ? " · Eyes enabled" : ""}`;
+}
+
+function randomizeGenerationEffects() {
+  if (!randomizeEffects.checked) return;
+  const enabled = new Set(randomizeEnabledEffects());
+  for (const input of effectToggles) input.checked = enabled.has(input.dataset.effect);
+  updateEffectControls();
 }
 
 function positionEffectsPanel() {
@@ -86,7 +94,7 @@ effectsButton.addEventListener("click", () => {
   effectsPanel.hidden = false;
   effectsButton.setAttribute("aria-expanded", "true");
   positionEffectsPanel();
-  effectToggles[0].focus();
+  randomizeEffects.focus();
 });
 document.querySelector("#effects-close").addEventListener("click", () => closeEffectsPanel(true));
 document.addEventListener("pointerdown", event => {
@@ -99,6 +107,7 @@ document.addEventListener("keydown", event => {
   }
 });
 for (const input of effectToggles) input.addEventListener("change", updateEffectControls);
+randomizeEffects.addEventListener("change", updateEffectControls);
 effectChance.addEventListener("input", updateEffectControls);
 window.addEventListener("resize", positionEffectsPanel);
 
@@ -399,6 +408,7 @@ async function initialize() {
     slider.value = Math.min(Number(slider.value), Number(slider.max));
     count.value = slider.value;
     slider.disabled = false;
+    randomizeGenerationEffects();
     order = shuffled(images);
     await render();
   } catch (error) {
@@ -426,10 +436,11 @@ regenerate.addEventListener("click", () => {
     initialize();
     return;
   }
+  randomizeGenerationEffects();
   order = shuffled(images);
   layerEffects = new Map();
   eyeLayer = enableEyes.checked ? chooseEyeTrait() : null;
-  render();
+  return render();
 });
 regenerate.addEventListener("contextmenu", previousGeneration);
 

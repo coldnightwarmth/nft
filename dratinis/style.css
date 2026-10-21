@@ -155,6 +155,7 @@ button:disabled, input:disabled { opacity: .5; cursor: wait; }
 }
 #effects-panel[hidden] { display: none; }
 .effects-heading { display: flex; flex: none; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+.randomize-option { flex: none; padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid #303030; }
 .effect-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 20px; max-height: 306px; min-height: 34px; overflow-y: auto; flex: 0 1 auto; padding: 3px; margin: 0 -3px; }
 .effect-list .effect-option { gap: 8px; padding-right: 1px; }
 .effect-list .switch-track { flex: none; }

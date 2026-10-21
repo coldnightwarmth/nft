@@ -1,11 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { chooseLayerEffect, planLayerEffects, EFFECT_TYPES, EFFECT_NAMES, ADDITIONAL_EFFECT_TYPES } from "../dratinis/effects.js";
+import { chooseLayerEffect, planLayerEffects, randomizeEnabledEffects, EFFECT_TYPES, EFFECT_NAMES, ADDITIONAL_EFFECT_TYPES } from "../dratinis/effects.js";
 import { createGenerationMetadata } from "../dratinis/metadata.js";
 import { waveCoordinates } from "../dratinis/fx/effects.js";
 
 const originalEffects = ["pixelation", "overlay", "blur", "halftone"];
+
+test("Randomize FX independently flips every effect with equal on/off odds", () => {
+  assert.deepEqual(randomizeEnabledEffects(() => 0), EFFECT_TYPES);
+  assert.deepEqual(randomizeEnabledEffects(() => .5), []);
+  let index = 0;
+  assert.deepEqual(randomizeEnabledEffects(() => index++ % 2 ? .75 : .25), EFFECT_TYPES.filter((_, i) => i % 2 === 0));
+  assert.equal(index, 17);
+});
 
 test("disabled effects and zero chance leave layers untouched", () => {
   const unexpectedRandom = () => { throw new Error("No random draw should be needed"); };

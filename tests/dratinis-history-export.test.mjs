@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
 import { readFile } from "node:fs/promises";
-import { planLayerEffects, EFFECT_TYPES, ADDITIONAL_EFFECT_TYPES } from "../dratinis/effects.js";
+import { planLayerEffects, randomizeEnabledEffects, EFFECT_TYPES, ADDITIONAL_EFFECT_TYPES } from "../dratinis/effects.js";
 import { createGenerationMetadata } from "../dratinis/metadata.js";
 import { EYE_TRAITS, chooseEyeTrait, eyeAssetURLs } from "../dratinis/eyes.js";
 
@@ -58,7 +58,7 @@ async function app({ missingLocalEyes = false, missingHostedEyes = false } = {})
     document, window: { addEventListener() {} }, URL: BrowserURL, AbortController, Map, Math, Blob,
     console: { error: error => errors.push(error) }, clearTimeout,
     setTimeout: (callback, delay) => delay === 60_000 ? 0 : setTimeout(callback, delay),
-    ResizeObserver: class { observe() {} }, planLayerEffects, createGenerationMetadata,
+    ResizeObserver: class { observe() {} }, planLayerEffects, createGenerationMetadata, randomizeEnabledEffects,
     chooseEyeTrait, eyeAssetURLs,
     createFavorites: () => ({ update() {}, close() {} }),
     createEffectRenderer: () => ({ draw: (drawing, image, recipe) => drawing.drawImage({
@@ -350,5 +350,52 @@ test("every added effect survives reorder, undo and favorite recall on Dratinis 
     assert.deepEqual(state().pixels, saved.pixels);
     assert.deepEqual(state().eye, saved.eye);
   }
+  assert.deepEqual(errors, []);
+});
+
+test("Randomize FX picks a new enabled set per Regenerate and applies it to layers and eyes", async () => {
+  const { el, toggles, state, sandbox, errors } = await app();
+  const enabled = () => toggles.filter(toggle => toggle.checked).map(toggle => toggle.dataset.effect);
+  toggles[0].checked = true;
+  el("#effect-chance").value = 100;
+  el("#enable-eyes").checked = true;
+  await el("#enable-eyes").handlers.change();
+  let rolls = 0;
+  const choices = [["duotone", "wave"], ["negative"], []];
+  sandbox.randomizeEnabledEffects = () => choices[rolls++];
+  // Manual mode stays unchanged until the master switch is on.
+  await el("#regenerate").handlers.click();
+  assert.equal(rolls, 0);
+  assert.deepEqual(enabled(), ["pixelation"]);
+  const original = state();
+  el("#randomize-effects").checked = true;
+  el("#randomize-effects").handlers.change();
+  assert.equal(rolls, 0);
+  assert.deepEqual(state(), original);
+  for (const choice of choices) {
+    const before = state();
+    await el("#regenerate").handlers.click();
+    assert.deepEqual(enabled(), choice);
+    assert.equal(el("#enable-eyes").checked, true);
+    assert.equal(Number(el("#effect-chance").value), 100);
+    assert(state().pixels.every(layer => choice.length ? choice.includes(layer.effect?.type) : layer.effect === null));
+    const rolled = state();
+    el("#regenerate").handlers.contextmenu({ preventDefault() {} });
+    assert.deepEqual(state(), before);
+    // Reorder, Shuffle FX and the layer slider do not flip the switches again.
+    await el("#reorder").handlers.click();
+    await el("#shuffle-effects").handlers.click();
+    el("#layers").value = 5;
+    await vm.runInContext("render()", sandbox);
+    assert.deepEqual(enabled(), choice);
+    assert.equal(rolled.pixels.at(-1).filename, rolled.eye.filename);
+  }
+  assert.equal(rolls, 3);
+  el("#randomize-effects").checked = false;
+  el("#randomize-effects").handlers.change();
+  toggles.find(toggle => toggle.dataset.effect === "chrome").checked = true;
+  await el("#regenerate").handlers.click();
+  assert.equal(rolls, 3);
+  assert.deepEqual(enabled(), ["chrome"]);
   assert.deepEqual(errors, []);
 });

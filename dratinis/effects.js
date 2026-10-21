@@ -8,6 +8,10 @@ export const EFFECT_NAMES = {
 export const EFFECT_TYPES = Object.keys(EFFECT_NAMES);
 export const HALFTONE_COLORS = ["#e53235", "#245eea", "#ebbf13", "#141414"];
 
+export function randomizeEnabledEffects(random = Math.random) {
+  return EFFECT_TYPES.filter(() => random() < 0.5);
+}
+
 export function chooseLayerEffect(settings, random = Math.random) {
   const enabled = EFFECT_TYPES.filter(type => settings.enabled.includes(type));
   const chance = Math.max(0, Math.min(100, Number(settings.chance) || 0));
